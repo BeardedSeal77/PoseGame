@@ -1,0 +1,85 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a654157d71bcc724cab114412324a877, type: 3}
+  m_Name: pose_001
+  m_EditorClassIdentifier: Assembly-CSharp::PoseData
+  displayName: pose_001
+  difficulty: 1
+  keypoints:
+  - name: nose
+    x: 0.5467
+    y: 0.3546
+    confidence: 0.9973
+  - name: left_eye
+    x: 0.5591
+    y: 0.3366
+    confidence: 0.9877
+  - name: right_eye
+    x: 0.5296
+    y: 0.3383
+    confidence: 0.9907
+  - name: left_ear
+    x: 0.5738
+    y: 0.3609
+    confidence: 0.8483
+  - name: right_ear
+    x: 0.5045
+    y: 0.3673
+    confidence: 0.8946
+  - name: left_shoulder
+    x: 0.62
+    y: 0.4768
+    confidence: 0.9941
+  - name: right_shoulder
+    x: 0.4595
+    y: 0.4975
+    confidence: 0.998
+  - name: left_elbow
+    x: 0.7477
+    y: 0.5179
+    confidence: 0.9637
+  - name: right_elbow
+    x: 0.3267
+    y: 0.5514
+    confidence: 0.986
+  - name: left_wrist
+    x: 0.8727
+    y: 0.545
+    confidence: 0.9244
+  - name: right_wrist
+    x: 0.1867
+    y: 0.5418
+    confidence: 0.9628
+  - name: left_hip
+    x: 0.6159
+    y: 0.8373
+    confidence: 0.9707
+  - name: right_hip
+    x: 0.5085
+    y: 0.8488
+    confidence: 0.9798
+  - name: left_knee
+    x: 0.6612
+    y: 1
+    confidence: 0.0738
+  - name: right_knee
+    x: 0.4907
+    y: 1
+    confidence: 0.0987
+  - name: left_ankle
+    x: 0.7054
+    y: 1
+    confidence: 0.002
+  - name: right_ankle
+    x: 0.4649
+    y: 1
+    confidence: 0.0025
