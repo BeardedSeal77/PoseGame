@@ -1,0 +1,8 @@
+# Core
+opencv-python
+numpy
+
+# YOLO pose detection
+# torch: install separately with CUDA support first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu129
+ultralytics>=8.3.0

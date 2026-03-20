@@ -1,0 +1,25 @@
+# Web framework
+flask==3.0.0
+flask-cors==4.0.0
+
+# Core dependencies
+requests==2.32.3
+numpy==1.24.4
+opencv-python==4.9.0.80
+
+# AI/ML Dependencies
+# torch and torchvision: Install separately with CUDA support
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
+ultralytics==8.3.203
+transformers==4.56.2
+faster-whisper==1.2.0
+
+# Audio Dependencies
+soundfile==0.13.1
+pyaudio==0.2.14
+
+# WebSocket
+websocket-client==1.8.0
+
+# Video streaming
+av==13.1.0
