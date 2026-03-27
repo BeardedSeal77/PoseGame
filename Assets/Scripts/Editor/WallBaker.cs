@@ -1,11 +1,13 @@
 using UnityEngine;
 using UnityEditor;
+using UnityEngine.Rendering;
 using System.Collections.Generic;
 using System.IO;
 
 /// <summary>
-/// Editor tool: bakes PoseData into wall sprite prefabs.
-/// Generates a texture with a human-shaped cutout, saves as PNG + prefab.
+/// Editor tool: bakes PoseData into 3D wall prefabs.
+/// Front/back faces use baked texture with alpha cutout (URP Lit + alpha clip).
+/// Inner cutout walls are extruded from edge detection — real geometry with solid wall texture.
 /// Access via menu: PoseGame > Bake Walls from Poses
 /// </summary>
 public class WallBaker : EditorWindow
@@ -14,39 +16,35 @@ public class WallBaker : EditorWindow
     private string textureOutput = "Assets/Textures/Walls";
     private string prefabOutput = "Assets/Prefabs/Walls";
 
-    private int textureWidth = 512;
-    private int textureHeight = 512;
-    private Color cutoutColor = new Color(0f, 0f, 0f, 0f);       // Transparent
-    private int jointRadius = 18;
-    private int headRadius = 28;
-    private int padding = 40; // Pixels of padding around the silhouette
+    private int texWidth = 1024;
+    private int texHeight = 1024;
 
-    // Jungle texture settings
-    private Texture2D customWallTexture = null; // Optional: drag a tileable texture here
-    private float textureScale = 2f;            // How many times to tile the texture
-    private Color stoneBase = new Color(0.35f, 0.32f, 0.25f, 1f);
-    private Color stoneDark = new Color(0.18f, 0.15f, 0.10f, 1f);
-    private Color mossColor = new Color(0.15f, 0.35f, 0.10f, 1f);
-    private Color vineColor = new Color(0.10f, 0.25f, 0.05f, 1f);
-    [Range(0f, 1f)] private float mossAmount = 0.4f;
-    [Range(0f, 1f)] private float crackAmount = 0.3f;
-    private bool generateNormalMap = true;
+    private int jointRadius = 22;
+    private int headRadius = 32;
+    private int padding = 50;
 
-    // Skeleton limb connections (indices into the 17 COCO keypoints)
+    private Texture2D baseColorMap;
+    private Texture2D normalMap;
+    private Texture2D heightMap;
+    private Texture2D aoMap;
+    private bool texturesAutoLoaded;
+
+    private Vector2 scrollPos;
+
+    private float textureTiling = 2f;
+    private float bumpStrength = 1.0f;
+    private float smoothness = 0.2f;
+
+    private float wallWidth = 5f;
+    private float wallHeight = 5f;
+    private float wallDepth = 0.3f;
+
     private static readonly int[][] SKELETON = new int[][]
     {
-        new[] {5, 6},   // shoulders
-        new[] {5, 7},   // left shoulder -> left elbow
-        new[] {7, 9},   // left elbow -> left wrist
-        new[] {6, 8},   // right shoulder -> right elbow
-        new[] {8, 10},  // right elbow -> right wrist
-        new[] {5, 11},  // left shoulder -> left hip
-        new[] {6, 12},  // right shoulder -> right hip
-        new[] {11, 12}, // hips
-        new[] {11, 13}, // left hip -> left knee
-        new[] {13, 15}, // left knee -> left ankle
-        new[] {12, 14}, // right hip -> right knee
-        new[] {14, 16}, // right knee -> right ankle
+        new[] {5, 6},  new[] {5, 7},  new[] {7, 9},
+        new[] {6, 8},  new[] {8, 10}, new[] {5, 11},
+        new[] {6, 12}, new[] {11, 12}, new[] {11, 13},
+        new[] {13, 15}, new[] {12, 14}, new[] {14, 16},
     };
 
     [MenuItem("PoseGame/Bake Walls from Poses")]
@@ -55,9 +53,31 @@ public class WallBaker : EditorWindow
         GetWindow<WallBaker>("Wall Baker");
     }
 
+    private void OnEnable()
+    {
+        AutoLoadTextures();
+    }
+
+    private void AutoLoadTextures()
+    {
+        if (texturesAutoLoaded) return;
+        texturesAutoLoaded = true;
+
+        string folder = "Assets/Phoenix3D/Textures/Outdoor_Wall_T13";
+        baseColorMap = AssetDatabase.LoadAssetAtPath<Texture2D>($"{folder}/Outdoor_Wall_T13_Base_Color.png");
+        normalMap = AssetDatabase.LoadAssetAtPath<Texture2D>($"{folder}/Outdoor_Wall_T13_Normal_DirectX.png");
+        heightMap = AssetDatabase.LoadAssetAtPath<Texture2D>($"{folder}/Outdoor_Wall_T13_Height.png");
+        aoMap = AssetDatabase.LoadAssetAtPath<Texture2D>($"{folder}/Outdoor_Wall_T13_Ambient_occlusion.png");
+
+        if (baseColorMap != null)
+            Debug.Log("[WallBaker] Auto-loaded wall textures from Phoenix3D");
+    }
+
     private void OnGUI()
     {
-        GUILayout.Label("Bake Wall Prefabs from Pose Data", EditorStyles.boldLabel);
+        scrollPos = EditorGUILayout.BeginScrollView(scrollPos);
+
+        GUILayout.Label("Bake 3D Wall Prefabs", EditorStyles.boldLabel);
         GUILayout.Space(10);
 
         posesFolder = EditorGUILayout.TextField("Poses Folder", posesFolder);
@@ -66,54 +86,71 @@ public class WallBaker : EditorWindow
 
         GUILayout.Space(10);
         GUILayout.Label("Cutout Settings", EditorStyles.boldLabel);
-        textureWidth = EditorGUILayout.IntField("Texture Width", textureWidth);
-        textureHeight = EditorGUILayout.IntField("Texture Height", textureHeight);
-        jointRadius = EditorGUILayout.IntSlider("Joint Radius", jointRadius, 8, 40);
+        texWidth = EditorGUILayout.IntField("Texture Width", texWidth);
+        texHeight = EditorGUILayout.IntField("Texture Height", texHeight);
+        jointRadius = EditorGUILayout.IntSlider("Joint Radius", jointRadius, 8, 50);
         EditorGUILayout.LabelField("Limb Thickness", $"{jointRadius * 2} (auto: 2x joint radius)");
-        headRadius = EditorGUILayout.IntSlider("Head Radius", headRadius, 12, 60);
-        padding = EditorGUILayout.IntSlider("Edge Padding", padding, 10, 80);
+        headRadius = EditorGUILayout.IntSlider("Head Radius", headRadius, 12, 70);
+        padding = EditorGUILayout.IntSlider("Edge Padding", padding, 10, 100);
 
         GUILayout.Space(10);
-        GUILayout.Label("Jungle Wall Appearance", EditorStyles.boldLabel);
-        customWallTexture = (Texture2D)EditorGUILayout.ObjectField(
-            "Custom Texture (optional)", customWallTexture, typeof(Texture2D), false);
+        GUILayout.Label("Wall Texture Pack", EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(
+            "Drag textures from your wall texture folder (e.g. Phoenix3D)", MessageType.Info);
+        baseColorMap = (Texture2D)EditorGUILayout.ObjectField(
+            "Base Color", baseColorMap, typeof(Texture2D), false);
+        normalMap = (Texture2D)EditorGUILayout.ObjectField(
+            "Normal Map", normalMap, typeof(Texture2D), false);
+        heightMap = (Texture2D)EditorGUILayout.ObjectField(
+            "Height Map (optional)", heightMap, typeof(Texture2D), false);
+        aoMap = (Texture2D)EditorGUILayout.ObjectField(
+            "AO Map (optional)", aoMap, typeof(Texture2D), false);
 
-        if (customWallTexture != null)
-        {
-            textureScale = EditorGUILayout.Slider("Texture Tiling", textureScale, 0.5f, 8f);
-        }
-        else
-        {
-            EditorGUILayout.LabelField("Using procedural jungle stone");
-            stoneBase = EditorGUILayout.ColorField("Stone Base", stoneBase);
-            stoneDark = EditorGUILayout.ColorField("Stone Dark", stoneDark);
-            mossColor = EditorGUILayout.ColorField("Moss Color", mossColor);
-            mossAmount = EditorGUILayout.Slider("Moss Amount", mossAmount, 0f, 1f);
-            crackAmount = EditorGUILayout.Slider("Crack Amount", crackAmount, 0f, 1f);
-        }
-        generateNormalMap = EditorGUILayout.Toggle("Generate Normal Map", generateNormalMap);
+        GUILayout.Space(10);
+        GUILayout.Label("Material Settings", EditorStyles.boldLabel);
+        textureTiling = EditorGUILayout.Slider("Texture Tiling", textureTiling, 0.5f, 8f);
+        bumpStrength = EditorGUILayout.Slider("Bump Strength", bumpStrength, 0f, 3f);
+        smoothness = EditorGUILayout.Slider("Smoothness", smoothness, 0f, 1f);
+
+        GUILayout.Space(10);
+        GUILayout.Label("Wall Mesh", EditorStyles.boldLabel);
+        wallWidth = EditorGUILayout.FloatField("Width", wallWidth);
+        wallHeight = EditorGUILayout.FloatField("Height", wallHeight);
+        wallDepth = EditorGUILayout.Slider("Depth (Thickness)", wallDepth, 0.05f, 1f);
 
         GUILayout.Space(15);
 
-        if (GUILayout.Button("Bake All Walls", GUILayout.Height(30)))
-        {
+        GUI.enabled = baseColorMap != null;
+        if (GUILayout.Button("Bake All Walls", GUILayout.Height(35)))
             BakeAll();
-        }
+        GUI.enabled = true;
+
+        if (baseColorMap == null)
+            EditorGUILayout.HelpBox("Assign at least the Base Color texture to bake.", MessageType.Warning);
+
+        EditorGUILayout.EndScrollView();
     }
 
     private void BakeAll()
     {
         EnsureFolder(textureOutput);
         EnsureFolder(prefabOutput);
+        EnsureFolder("Assets/Materials/Walls");
+
+        var readableRestore = new List<TextureImporter>();
+        MakeReadable(baseColorMap, readableRestore);
+        if (normalMap != null) MakeReadable(normalMap, readableRestore);
 
         string[] guids = AssetDatabase.FindAssets("t:PoseData", new[] { posesFolder });
-
         if (guids.Length == 0)
         {
-            EditorUtility.DisplayDialog("Error",
-                $"No PoseData assets found in {posesFolder}", "OK");
+            EditorUtility.DisplayDialog("Error", $"No PoseData assets found in {posesFolder}", "OK");
+            RestoreReadable(readableRestore);
             return;
         }
+
+        // Create shared inner wall material (solid, no cutout)
+        Material innerMat = CreateInnerWallMaterial();
 
         int baked = 0;
         foreach (string guid in guids)
@@ -121,384 +158,341 @@ public class WallBaker : EditorWindow
             string path = AssetDatabase.GUIDToAssetPath(guid);
             PoseData pose = AssetDatabase.LoadAssetAtPath<PoseData>(path);
             if (pose == null) continue;
-
-            BakeWall(pose);
+            BakeWall(pose, innerMat);
             baked++;
         }
 
+        RestoreReadable(readableRestore);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        EditorUtility.DisplayDialog("Bake Complete",
-            $"Baked {baked} wall(s) to {prefabOutput}", "OK");
+        EditorUtility.DisplayDialog("Bake Complete", $"Baked {baked} 3D wall(s) to {prefabOutput}", "OK");
     }
 
-    private void BakeWall(PoseData pose)
+    private void BakeWall(PoseData pose, Material innerMat)
     {
-        // Create the wall texture
-        Texture2D tex = new Texture2D(textureWidth, textureHeight, TextureFormat.RGBA32, false);
+        // ---- Step 1: Generate mask as bool array ----
+        bool[] mask = new bool[texWidth * texHeight]; // true = wall, false = cutout
+        for (int i = 0; i < mask.Length; i++) mask[i] = true;
 
-        // Fill with jungle wall texture
-        if (customWallTexture != null)
-            FillWithTiledTexture(tex, customWallTexture, textureScale);
-        else
-            FillWithProceduralJungle(tex);
-
-        // Map normalized keypoints to pixel coordinates
-        // Fit the pose within the texture with padding
-        Vector2[] pixelPositions = MapKeypointsToTexture(pose);
-
+        Vector2[] positions = MapKeypointsToTexture(pose);
         int limbThickness = jointRadius * 2;
 
-        // --- HEAD: amalgamate all head joints (0-4) into one smooth circle ---
-        // Keypoints: 0=nose, 1=left_eye, 2=right_eye, 3=left_ear, 4=right_ear
+        // HEAD
         Vector2 headCenter = Vector2.zero;
         int headCount = 0;
         for (int i = 0; i <= 4; i++)
         {
             if (pose.keypoints[i].confidence < 0.3f) continue;
-            headCenter += pixelPositions[i];
+            headCenter += positions[i];
             headCount++;
         }
-
         if (headCount > 0)
         {
             headCenter /= headCount;
-
-            // Radius = distance to farthest head keypoint + headRadius for padding
             float maxDist = 0f;
             for (int i = 0; i <= 4; i++)
             {
                 if (pose.keypoints[i].confidence < 0.3f) continue;
-                float dist = Vector2.Distance(headCenter, pixelPositions[i]);
+                float dist = Vector2.Distance(headCenter, positions[i]);
                 if (dist > maxDist) maxDist = dist;
             }
-            int amalgamatedHeadRadius = Mathf.RoundToInt(maxDist) + headRadius;
-            DrawFilledCircle(tex, headCenter, amalgamatedHeadRadius, cutoutColor);
-
-            // Connect shoulders to head center (neck)
-            if (pose.keypoints[5].confidence >= 0.3f) // left shoulder
-                DrawThickLine(tex, headCenter, pixelPositions[5], limbThickness, cutoutColor);
-            if (pose.keypoints[6].confidence >= 0.3f) // right shoulder
-                DrawThickLine(tex, headCenter, pixelPositions[6], limbThickness, cutoutColor);
+            int headR = Mathf.RoundToInt(maxDist) + headRadius;
+            MaskCircle(mask, headCenter, headR);
+            if (pose.keypoints[5].confidence >= 0.3f)
+                MaskLine(mask, headCenter, positions[5], limbThickness);
+            if (pose.keypoints[6].confidence >= 0.3f)
+                MaskLine(mask, headCenter, positions[6], limbThickness);
         }
 
-        // --- BODY LIMBS: draw skeleton connections (skip head joints) ---
+        // BODY LIMBS
         foreach (int[] bone in SKELETON)
         {
-            Keypoint kpA = pose.keypoints[bone[0]];
-            Keypoint kpB = pose.keypoints[bone[1]];
-
-            if (kpA.confidence < 0.3f || kpB.confidence < 0.3f)
+            if (pose.keypoints[bone[0]].confidence < 0.3f || pose.keypoints[bone[1]].confidence < 0.3f)
                 continue;
-
-            DrawThickLine(tex, pixelPositions[bone[0]], pixelPositions[bone[1]],
-                limbThickness, cutoutColor);
+            MaskLine(mask, positions[bone[0]], positions[bone[1]], limbThickness);
         }
 
-        // --- BODY JOINTS: draw circles (skip head joints 0-4, handled above) ---
+        // JOINTS (skip head 0-4)
         for (int i = 5; i < pose.keypoints.Length; i++)
         {
-            if (pose.keypoints[i].confidence < 0.3f)
-                continue;
-
-            DrawFilledCircle(tex, pixelPositions[i], jointRadius, cutoutColor);
+            if (pose.keypoints[i].confidence < 0.3f) continue;
+            MaskCircle(mask, positions[i], jointRadius);
         }
 
-        // --- LEGS: open the wall from hips downward to bottom edge ---
-        // Left leg: draw from hip (or lowest visible leg joint) down to y=0
-        int[] leftLeg = { 11, 13, 15 };  // left_hip, left_knee, left_ankle
-        int[] rightLeg = { 12, 14, 16 }; // right_hip, right_knee, right_ankle
-        OpenLegToBottom(tex, pose, pixelPositions, leftLeg, limbThickness, cutoutColor);
-        OpenLegToBottom(tex, pose, pixelPositions, rightLeg, limbThickness, cutoutColor);
+        // OPEN LEGS
+        MaskLegToBottom(mask, pose, positions, new[] { 11, 13, 15 }, limbThickness);
+        MaskLegToBottom(mask, pose, positions, new[] { 12, 14, 16 }, limbThickness);
 
-        // Flood fill any enclosed regions (e.g. torso area between shoulders and hips)
-        FloodFillEnclosedRegions(tex, cutoutColor);
+        // FLOOD FILL enclosed regions
+        FloodFillEnclosed(mask);
 
-        tex.Apply();
-
-        // Save diffuse texture as PNG
-        string texPath = $"{textureOutput}/{pose.displayName}_wall.png";
-        byte[] pngData = tex.EncodeToPNG();
-        File.WriteAllBytes(Path.Combine(Application.dataPath, "..", texPath), pngData);
-
-        // Generate and save normal map
-        string normalPath = null;
-        if (generateNormalMap)
+        // ---- Step 2: Bake RGBA texture (tiled wall + alpha from mask) ----
+        Texture2D bakedTex = new Texture2D(texWidth, texHeight, TextureFormat.RGBA32, false);
+        for (int y = 0; y < texHeight; y++)
         {
-            Texture2D normalMap = GenerateNormalMap(tex, 2f);
-            normalPath = $"{textureOutput}/{pose.displayName}_wall_normal.png";
-            byte[] normalPng = normalMap.EncodeToPNG();
-            File.WriteAllBytes(Path.Combine(Application.dataPath, "..", normalPath), normalPng);
-            Object.DestroyImmediate(normalMap);
-        }
-
-        Object.DestroyImmediate(tex);
-        AssetDatabase.Refresh();
-
-        // Configure diffuse texture import
-        TextureImporter importer = AssetImporter.GetAtPath(texPath) as TextureImporter;
-        if (importer != null)
-        {
-            importer.textureType = TextureImporterType.Sprite;
-            importer.spritePixelsPerUnit = 100;
-            importer.alphaIsTransparency = true;
-            importer.filterMode = FilterMode.Bilinear;
-            importer.SaveAndReimport();
-        }
-
-        // Configure normal map import
-        if (normalPath != null)
-        {
-            TextureImporter normalImporter = AssetImporter.GetAtPath(normalPath) as TextureImporter;
-            if (normalImporter != null)
+            for (int x = 0; x < texWidth; x++)
             {
-                normalImporter.textureType = TextureImporterType.NormalMap;
-                normalImporter.filterMode = FilterMode.Bilinear;
-                normalImporter.SaveAndReimport();
+                float u = (x / (float)texWidth) * textureTiling;
+                float v = (y / (float)texHeight) * textureTiling;
+                u -= Mathf.Floor(u);
+                v -= Mathf.Floor(v);
+                Color c = baseColorMap.GetPixelBilinear(u, v);
+                c.a = mask[y * texWidth + x] ? 1f : 0f;
+                bakedTex.SetPixel(x, y, c);
             }
         }
+        bakedTex.Apply();
 
-        // Load sprite
-        Sprite sprite = AssetDatabase.LoadAssetAtPath<Sprite>(texPath);
-        if (sprite == null)
+        string texPath = $"{textureOutput}/{pose.displayName}_wall.png";
+        File.WriteAllBytes(Path.Combine(Application.dataPath, "..", texPath), bakedTex.EncodeToPNG());
+        Object.DestroyImmediate(bakedTex);
+        AssetDatabase.Refresh();
+
+        TextureImporter imp = AssetImporter.GetAtPath(texPath) as TextureImporter;
+        if (imp != null)
         {
-            Debug.LogError($"[WallBaker] Failed to load sprite: {texPath}");
+            imp.textureType = TextureImporterType.Default;
+            imp.sRGBTexture = true;
+            imp.alphaIsTransparency = true;
+            imp.alphaSource = TextureImporterAlphaSource.FromInput;
+            imp.filterMode = FilterMode.Bilinear;
+            imp.wrapMode = TextureWrapMode.Clamp;
+            imp.SaveAndReimport();
+        }
+
+        Texture2D loadedTex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+
+        // ---- Step 3: Create cutout material (front/back faces) ----
+        string matPath = $"Assets/Materials/Walls/{pose.displayName}_wall.mat";
+        if (File.Exists(Path.Combine(Application.dataPath, "..", matPath)))
+            AssetDatabase.DeleteAsset(matPath);
+
+        Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+        if (litShader == null)
+        {
+            Debug.LogError("[WallBaker] URP Lit shader not found!");
             return;
         }
 
-        // Find or create a Sprite-Lit material
-        Material litMaterial = FindOrCreateLitMaterial();
+        Material cutoutMat = new Material(litShader);
+        cutoutMat.name = pose.displayName + "_wall";
+        cutoutMat.SetTexture("_BaseMap", loadedTex);
+        cutoutMat.SetColor("_BaseColor", Color.white);
+        cutoutMat.SetFloat("_AlphaClip", 1f);
+        cutoutMat.SetFloat("_Cutoff", 0.5f);
+        cutoutMat.SetFloat("_Surface", 0f);
+        cutoutMat.EnableKeyword("_ALPHATEST_ON");
+        cutoutMat.renderQueue = (int)RenderQueue.AlphaTest;
 
-        // Create prefab
+        if (normalMap != null)
+        {
+            cutoutMat.SetTexture("_BumpMap", normalMap);
+            cutoutMat.SetFloat("_BumpScale", bumpStrength);
+            cutoutMat.EnableKeyword("_NORMALMAP");
+        }
+        if (heightMap != null)
+        {
+            cutoutMat.SetTexture("_ParallaxMap", heightMap);
+            cutoutMat.SetFloat("_Parallax", 0.02f);
+            cutoutMat.EnableKeyword("_PARALLAXMAP");
+        }
+        if (aoMap != null)
+        {
+            cutoutMat.SetTexture("_OcclusionMap", aoMap);
+            cutoutMat.SetFloat("_OcclusionStrength", 1f);
+        }
+        cutoutMat.SetFloat("_Smoothness", smoothness);
+        cutoutMat.SetFloat("_Metallic", 0f);
+
+        AssetDatabase.CreateAsset(cutoutMat, matPath);
+
+        // ---- Step 4: Generate mesh with 2 submeshes ----
+        Mesh wallMesh = CreateWallMesh(mask, wallWidth, wallHeight, wallDepth);
+
+        string meshPath = $"{prefabOutput}/{pose.displayName}_wall_mesh.asset";
+        if (File.Exists(Path.Combine(Application.dataPath, "..", meshPath)))
+            AssetDatabase.DeleteAsset(meshPath);
+        AssetDatabase.CreateAsset(wallMesh, meshPath);
+
+        // ---- Step 5: Assemble prefab ----
         GameObject wallGO = new GameObject(pose.displayName + "_wall");
-        SpriteRenderer sr = wallGO.AddComponent<SpriteRenderer>();
-        sr.sprite = sprite;
-        sr.material = litMaterial;
 
-        // Attach pose data reference
+        MeshFilter mf = wallGO.AddComponent<MeshFilter>();
+        mf.sharedMesh = wallMesh;
+
+        MeshRenderer mr = wallGO.AddComponent<MeshRenderer>();
+        // Submesh 0 = front/back (cutout), Submesh 1 = inner walls (solid)
+        mr.sharedMaterials = new Material[] { cutoutMat, innerMat };
+        mr.shadowCastingMode = ShadowCastingMode.On;
+
         WallPoseRef poseRef = wallGO.AddComponent<WallPoseRef>();
         poseRef.poseData = pose;
+
+        BoxCollider col = wallGO.AddComponent<BoxCollider>();
+        col.size = new Vector3(wallWidth, wallHeight, wallDepth);
 
         string prefabPath = $"{prefabOutput}/{pose.displayName}_wall.prefab";
         PrefabUtility.SaveAsPrefabAsset(wallGO, prefabPath);
         Object.DestroyImmediate(wallGO);
 
-        Debug.Log($"[WallBaker] Baked: {prefabPath}");
+        Debug.Log($"[WallBaker] Baked: {prefabPath} (inner wall quads: submesh 1)");
     }
 
     // =========================================================================
-    // JUNGLE TEXTURE GENERATION
+    // INNER WALL MATERIAL (shared, solid, no cutout)
     // =========================================================================
 
-    private void FillWithTiledTexture(Texture2D target, Texture2D source, float tiling)
+    private Material CreateInnerWallMaterial()
     {
-        // Make source readable
-        string srcPath = AssetDatabase.GetAssetPath(source);
-        TextureImporter srcImporter = AssetImporter.GetAtPath(srcPath) as TextureImporter;
-        bool wasReadable = true;
-        if (srcImporter != null && !srcImporter.isReadable)
+        string matPath = "Assets/Materials/Walls/_inner_wall.mat";
+        Material existing = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+        if (existing != null)
         {
-            wasReadable = false;
-            srcImporter.isReadable = true;
-            srcImporter.SaveAndReimport();
+            // Update settings in case they changed
+            existing.SetFloat("_BumpScale", bumpStrength);
+            existing.SetFloat("_Smoothness", smoothness);
+            return existing;
         }
 
-        for (int y = 0; y < target.height; y++)
-        {
-            for (int x = 0; x < target.width; x++)
-            {
-                float u = (x / (float)target.width) * tiling;
-                float v = (y / (float)target.height) * tiling;
-                u -= Mathf.Floor(u); // Wrap
-                v -= Mathf.Floor(v);
+        Shader litShader = Shader.Find("Universal Render Pipeline/Lit");
+        Material mat = new Material(litShader);
+        mat.name = "_inner_wall";
 
-                Color c = source.GetPixelBilinear(u, v);
-                c.a = 1f;
-                target.SetPixel(x, y, c);
-            }
+        mat.SetTexture("_BaseMap", baseColorMap);
+        mat.SetColor("_BaseColor", Color.white);
+        mat.SetFloat("_Surface", 0f); // Opaque, no alpha clip
+        mat.SetFloat("_AlphaClip", 0f);
+
+        if (normalMap != null)
+        {
+            mat.SetTexture("_BumpMap", normalMap);
+            mat.SetFloat("_BumpScale", bumpStrength);
+            mat.EnableKeyword("_NORMALMAP");
+        }
+        if (aoMap != null)
+        {
+            mat.SetTexture("_OcclusionMap", aoMap);
+            mat.SetFloat("_OcclusionStrength", 1f);
         }
 
-        // Restore readability
-        if (!wasReadable && srcImporter != null)
-        {
-            srcImporter.isReadable = false;
-            srcImporter.SaveAndReimport();
-        }
-    }
+        mat.SetFloat("_Smoothness", smoothness);
+        mat.SetFloat("_Metallic", 0f);
+        // Double-sided so inner walls visible from both directions
+        mat.SetFloat("_Cull", (float)CullMode.Off);
+        mat.doubleSidedGI = true;
 
-    private void FillWithProceduralJungle(Texture2D tex)
-    {
-        // Random seed per wall so each looks different
-        float seed = Random.Range(0f, 1000f);
-        int w = tex.width;
-        int h = tex.height;
-
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                float nx = x / (float)w;
-                float ny = y / (float)h;
-
-                // Layer 1: Base stone with large-scale variation
-                float stoneNoise = Mathf.PerlinNoise(
-                    (nx * 4f) + seed, (ny * 4f) + seed);
-                Color baseCol = Color.Lerp(stoneDark, stoneBase, stoneNoise);
-
-                // Layer 2: Fine grain stone texture
-                float grainNoise = Mathf.PerlinNoise(
-                    (nx * 20f) + seed + 100f, (ny * 20f) + seed + 100f);
-                baseCol = Color.Lerp(baseCol, baseCol * 0.8f, grainNoise * 0.3f);
-
-                // Layer 3: Block/brick pattern
-                float blockX = Mathf.PerlinNoise(
-                    (nx * 8f) + seed + 200f, (ny * 3f) + seed + 200f);
-                float blockY = Mathf.PerlinNoise(
-                    (nx * 3f) + seed + 300f, (ny * 8f) + seed + 300f);
-                float blockEdge = Mathf.Max(
-                    Mathf.Abs(blockX - 0.5f), Mathf.Abs(blockY - 0.5f));
-                if (blockEdge > 0.35f)
-                    baseCol = Color.Lerp(baseCol, stoneDark, 0.5f);
-
-                // Layer 4: Cracks (high frequency, thresholded)
-                if (crackAmount > 0f)
-                {
-                    float crackNoise = Mathf.PerlinNoise(
-                        (nx * 30f) + seed + 400f, (ny * 30f) + seed + 400f);
-                    float crackNoise2 = Mathf.PerlinNoise(
-                        (nx * 45f) + seed + 500f, (ny * 15f) + seed + 500f);
-                    float crack = Mathf.Min(crackNoise, crackNoise2);
-                    float crackThreshold = 1f - crackAmount * 0.5f;
-                    if (crack < (1f - crackThreshold))
-                        baseCol = Color.Lerp(baseCol, stoneDark * 0.5f, 0.7f);
-                }
-
-                // Layer 5: Moss patches
-                if (mossAmount > 0f)
-                {
-                    float mossNoise = Mathf.PerlinNoise(
-                        (nx * 6f) + seed + 600f, (ny * 6f) + seed + 600f);
-                    float mossDetail = Mathf.PerlinNoise(
-                        (nx * 15f) + seed + 700f, (ny * 15f) + seed + 700f);
-                    float mossThreshold = 1f - mossAmount;
-
-                    if (mossNoise > mossThreshold)
-                    {
-                        float mossStrength = (mossNoise - mossThreshold) / mossAmount;
-                        Color moss = Color.Lerp(mossColor, vineColor, mossDetail);
-                        baseCol = Color.Lerp(baseCol, moss, mossStrength * 0.8f);
-                    }
-                }
-
-                // Layer 6: Subtle vertical moisture streaks
-                float streakNoise = Mathf.PerlinNoise(
-                    (nx * 12f) + seed + 800f, (ny * 2f) + seed + 800f);
-                if (streakNoise > 0.7f)
-                    baseCol = Color.Lerp(baseCol, baseCol * 0.85f, 0.3f);
-
-                baseCol.a = 1f;
-                tex.SetPixel(x, y, baseCol);
-            }
-        }
-    }
-
-    /// <summary>
-    /// Generates a normal map from a diffuse texture using Sobel filter.
-    /// Gives the wall a 3D depth appearance when lit.
-    /// </summary>
-    private Texture2D GenerateNormalMap(Texture2D source, float strength)
-    {
-        int w = source.width;
-        int h = source.height;
-        Texture2D normalMap = new Texture2D(w, h, TextureFormat.RGBA32, false);
-
-        Color[] srcPixels = source.GetPixels();
-
-        for (int y = 0; y < h; y++)
-        {
-            for (int x = 0; x < w; x++)
-            {
-                // Skip transparent pixels
-                Color center = srcPixels[y * w + x];
-                if (center.a < 0.5f)
-                {
-                    normalMap.SetPixel(x, y, new Color(0.5f, 0.5f, 1f, 0f));
-                    continue;
-                }
-
-                // Sample heights from grayscale
-                float tl = GetGray(srcPixels, x - 1, y + 1, w, h);
-                float t  = GetGray(srcPixels, x,     y + 1, w, h);
-                float tr = GetGray(srcPixels, x + 1, y + 1, w, h);
-                float l  = GetGray(srcPixels, x - 1, y,     w, h);
-                float r  = GetGray(srcPixels, x + 1, y,     w, h);
-                float bl = GetGray(srcPixels, x - 1, y - 1, w, h);
-                float b  = GetGray(srcPixels, x,     y - 1, w, h);
-                float br = GetGray(srcPixels, x + 1, y - 1, w, h);
-
-                // Sobel filter
-                float dx = (tr + 2f * r + br) - (tl + 2f * l + bl);
-                float dy = (tl + 2f * t + tr) - (bl + 2f * b + br);
-
-                Vector3 normal = new Vector3(-dx * strength, -dy * strength, 1f).normalized;
-
-                // Encode to 0-1 range
-                normalMap.SetPixel(x, y, new Color(
-                    normal.x * 0.5f + 0.5f,
-                    normal.y * 0.5f + 0.5f,
-                    normal.z * 0.5f + 0.5f,
-                    1f
-                ));
-            }
-        }
-
-        normalMap.Apply();
-        return normalMap;
-    }
-
-    private float GetGray(Color[] pixels, int x, int y, int w, int h)
-    {
-        x = Mathf.Clamp(x, 0, w - 1);
-        y = Mathf.Clamp(y, 0, h - 1);
-        Color c = pixels[y * w + x];
-        if (c.a < 0.5f) return 0f;
-        return c.grayscale;
-    }
-
-    private Material FindOrCreateLitMaterial()
-    {
-        string matPath = "Assets/Textures/Walls/WallLit.mat";
-        Material mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
-        if (mat != null) return mat;
-
-        // Find the Sprite-Lit-Default shader (URP 2D)
-        Shader litShader = Shader.Find("Universal Render Pipeline/2D/Sprite-Lit-Default");
-        if (litShader == null)
-        {
-            // Fallback
-            litShader = Shader.Find("Sprites/Default");
-            Debug.LogWarning("[WallBaker] Sprite-Lit-Default not found, using fallback");
-        }
-
-        mat = new Material(litShader);
-        mat.name = "WallLit";
-
-        EnsureFolder("Assets/Textures/Walls");
         AssetDatabase.CreateAsset(mat, matPath);
-        AssetDatabase.SaveAssets();
-
-        Debug.Log($"[WallBaker] Created lit material: {matPath}");
         return mat;
     }
 
-    /// <summary>
-    /// Maps normalized 0-1 keypoints into pixel coordinates,
-    /// fitting the pose within the texture bounds with padding.
-    /// </summary>
+    // =========================================================================
+    // MASK DRAWING (operates on bool array)
+    // =========================================================================
+
+    private void MaskCircle(bool[] mask, Vector2 center, int radius)
+    {
+        int cx = Mathf.RoundToInt(center.x);
+        int cy = Mathf.RoundToInt(center.y);
+        int r2 = radius * radius;
+        for (int y = -radius; y <= radius; y++)
+            for (int x = -radius; x <= radius; x++)
+                if (x * x + y * y <= r2)
+                {
+                    int px = cx + x, py = cy + y;
+                    if (px >= 0 && px < texWidth && py >= 0 && py < texHeight)
+                        mask[py * texWidth + px] = false;
+                }
+    }
+
+    private void MaskLine(bool[] mask, Vector2 a, Vector2 b, int thickness)
+    {
+        float dist = Vector2.Distance(a, b);
+        int steps = Mathf.CeilToInt(dist);
+        int halfThick = Mathf.RoundToInt(thickness * 0.5f);
+        for (int i = 0; i <= steps; i++)
+        {
+            float t = steps > 0 ? (float)i / steps : 0;
+            Vector2 point = Vector2.Lerp(a, b, t);
+            MaskCircle(mask, point, halfThick);
+        }
+    }
+
+    private void MaskLegToBottom(bool[] mask, PoseData pose, Vector2[] positions,
+        int[] jointIndices, int thickness)
+    {
+        Vector2 lowestPoint = Vector2.zero;
+        bool found = false;
+        foreach (int idx in jointIndices)
+        {
+            if (pose.keypoints[idx].confidence >= 0.3f)
+            {
+                if (!found || positions[idx].y < lowestPoint.y)
+                {
+                    lowestPoint = positions[idx];
+                    found = true;
+                }
+            }
+        }
+        if (!found) return;
+        MaskLine(mask, lowestPoint, new Vector2(lowestPoint.x, 0), thickness);
+    }
+
+    private void FloodFillEnclosed(bool[] mask)
+    {
+        int w = texWidth, h = texHeight;
+        bool[] visited = new bool[w * h];
+        Queue<int> queue = new Queue<int>();
+
+        for (int x = 0; x < w; x++)
+        {
+            TrySeed(x, 0, w, h, mask, visited, queue);
+            TrySeed(x, h - 1, w, h, mask, visited, queue);
+        }
+        for (int y = 0; y < h; y++)
+        {
+            TrySeed(0, y, w, h, mask, visited, queue);
+            TrySeed(w - 1, y, w, h, mask, visited, queue);
+        }
+
+        while (queue.Count > 0)
+        {
+            int idx = queue.Dequeue();
+            int x = idx % w, y = idx / w;
+            if (x > 0) TrySeed(x - 1, y, w, h, mask, visited, queue);
+            if (x < w - 1) TrySeed(x + 1, y, w, h, mask, visited, queue);
+            if (y > 0) TrySeed(x, y - 1, w, h, mask, visited, queue);
+            if (y < h - 1) TrySeed(x, y + 1, w, h, mask, visited, queue);
+        }
+
+        int filled = 0;
+        for (int i = 0; i < mask.Length; i++)
+        {
+            if (!visited[i] && mask[i])
+            {
+                mask[i] = false;
+                filled++;
+            }
+        }
+        if (filled > 0)
+            Debug.Log($"[WallBaker] Flood filled {filled} enclosed pixels");
+    }
+
+    private void TrySeed(int x, int y, int w, int h, bool[] mask, bool[] visited, Queue<int> queue)
+    {
+        int idx = y * w + x;
+        if (visited[idx]) return;
+        if (!mask[idx]) return; // Cutout pixel, skip
+        visited[idx] = true;
+        queue.Enqueue(idx);
+    }
+
+    // =========================================================================
+    // KEYPOINT MAPPING
+    // =========================================================================
+
     private Vector2[] MapKeypointsToTexture(PoseData pose)
     {
-        // Find bounding box of confident keypoints
         float minX = float.MaxValue, maxX = float.MinValue;
         float minY = float.MaxValue, maxY = float.MinValue;
         int validCount = 0;
@@ -513,22 +507,12 @@ public class WallBaker : EditorWindow
             validCount++;
         }
 
-        if (validCount < 2)
-        {
-            // Fallback: center everything
-            minX = 0; maxX = 1; minY = 0; maxY = 1;
-        }
+        if (validCount < 2) { minX = 0; maxX = 1; minY = 0; maxY = 1; }
 
-        float poseW = maxX - minX;
-        float poseH = maxY - minY;
-        if (poseW < 0.01f) poseW = 1f;
-        if (poseH < 0.01f) poseH = 1f;
-
-        // Available pixel area
-        float availW = textureWidth - padding * 2;
-        float availH = textureHeight - padding * 2;
-
-        // Scale to fit, preserving aspect ratio
+        float poseW = Mathf.Max(maxX - minX, 0.01f);
+        float poseH = Mathf.Max(maxY - minY, 0.01f);
+        float availW = texWidth - padding * 2;
+        float availH = texHeight - padding * 2;
         float scale = Mathf.Min(availW / poseW, availH / poseH);
         float offsetX = padding + (availW - poseW * scale) * 0.5f;
         float offsetY = padding + (availH - poseH * scale) * 0.5f;
@@ -537,152 +521,221 @@ public class WallBaker : EditorWindow
         for (int i = 0; i < pose.keypoints.Length; i++)
         {
             float px = offsetX + (pose.keypoints[i].x - minX) * scale;
-            // Flip Y: texture 0 is bottom, pose 0 is top
-            float py = textureHeight - (offsetY + (pose.keypoints[i].y - minY) * scale);
+            float py = texHeight - (offsetY + (pose.keypoints[i].y - minY) * scale);
             result[i] = new Vector2(px, py);
         }
-
         return result;
     }
 
-    private void DrawFilledCircle(Texture2D tex, Vector2 center, int radius, Color color)
-    {
-        int cx = Mathf.RoundToInt(center.x);
-        int cy = Mathf.RoundToInt(center.y);
-        int r2 = radius * radius;
+    // =========================================================================
+    // MESH GENERATION
+    // =========================================================================
 
-        for (int y = -radius; y <= radius; y++)
+    /// <summary>
+    /// Creates a wall mesh with 2 submeshes:
+    ///   Submesh 0: Front + back face quads (UV 0-1, used with cutout material)
+    ///   Submesh 1: Inner wall quads extruded along cutout edges (solid material)
+    /// </summary>
+    private Mesh CreateWallMesh(bool[] mask, float w, float h, float d)
+    {
+        float hw = w * 0.5f, hh = h * 0.5f, hd = d * 0.5f;
+
+        var verts = new List<Vector3>();
+        var uvs = new List<Vector2>();
+        var normals = new List<Vector3>();
+        var faceTris = new List<int>();  // Submesh 0: front/back
+        var innerTris = new List<int>(); // Submesh 1: inner walls
+
+        // --- Submesh 0: Front and back faces ---
+        // Front face (Z = -hd)
+        AddQuad(verts, uvs, normals, faceTris,
+            new Vector3(-hw, -hh, -hd), new Vector3(hw, -hh, -hd),
+            new Vector3(hw, hh, -hd), new Vector3(-hw, hh, -hd),
+            Vector3.back,
+            new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1), new Vector2(0, 1));
+
+        // Back face (Z = +hd)
+        AddQuad(verts, uvs, normals, faceTris,
+            new Vector3(hw, -hh, hd), new Vector3(-hw, -hh, hd),
+            new Vector3(-hw, hh, hd), new Vector3(hw, hh, hd),
+            Vector3.forward,
+            new Vector2(1, 0), new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 1));
+
+        // --- Submesh 1: Outer depth edges (top, bottom, left, right of the box) ---
+        // Top edge
+        AddInnerQuad(verts, uvs, normals, innerTris,
+            new Vector3(-hw, hh, -hd), new Vector3(hw, hh, -hd),
+            new Vector3(hw, hh, hd), new Vector3(-hw, hh, hd),
+            Vector3.up, w, d);
+        // Bottom edge
+        AddInnerQuad(verts, uvs, normals, innerTris,
+            new Vector3(-hw, -hh, hd), new Vector3(hw, -hh, hd),
+            new Vector3(hw, -hh, -hd), new Vector3(-hw, -hh, -hd),
+            Vector3.down, w, d);
+        // Left edge
+        AddInnerQuad(verts, uvs, normals, innerTris,
+            new Vector3(-hw, -hh, hd), new Vector3(-hw, -hh, -hd),
+            new Vector3(-hw, hh, -hd), new Vector3(-hw, hh, hd),
+            Vector3.left, h, d);
+        // Right edge
+        AddInnerQuad(verts, uvs, normals, innerTris,
+            new Vector3(hw, -hh, -hd), new Vector3(hw, -hh, hd),
+            new Vector3(hw, hh, hd), new Vector3(hw, hh, -hd),
+            Vector3.right, h, d);
+
+        // --- Submesh 1 (continued): Inner wall quads from edge detection ---
+        // For each cutout pixel adjacent to a wall pixel, create a quad from front to back
+        float pixW = w / texWidth;
+        float pixH = h / texHeight;
+
+        int mw = texWidth, mh = texHeight;
+        int edgeCount = 0;
+
+        for (int py = 0; py < mh; py++)
         {
-            for (int x = -radius; x <= radius; x++)
+            for (int px = 0; px < mw; px++)
             {
-                if (x * x + y * y <= r2)
+                // We only care about cutout pixels on the boundary
+                if (mask[py * mw + px]) continue; // This is wall, skip
+
+                // World position of this pixel center
+                float wx = (px + 0.5f) / mw * w - hw;
+                float wy = (py + 0.5f) / mh * h - hh;
+
+                // Check 4 neighbors — if neighbor is wall, place a quad on that edge
+                // Right neighbor is wall → place quad facing +X
+                if (px + 1 < mw && mask[py * mw + (px + 1)])
                 {
-                    int px = cx + x;
-                    int py = cy + y;
-                    if (px >= 0 && px < tex.width && py >= 0 && py < tex.height)
-                        tex.SetPixel(px, py, color);
+                    float ex = wx + pixW * 0.5f;
+                    AddInnerQuad(verts, uvs, normals, innerTris,
+                        new Vector3(ex, wy - pixH * 0.5f, -hd),
+                        new Vector3(ex, wy - pixH * 0.5f, hd),
+                        new Vector3(ex, wy + pixH * 0.5f, hd),
+                        new Vector3(ex, wy + pixH * 0.5f, -hd),
+                        Vector3.right, pixH, d);
+                    edgeCount++;
+                }
+                // Left neighbor is wall → quad facing -X
+                if (px - 1 >= 0 && mask[py * mw + (px - 1)])
+                {
+                    float ex = wx - pixW * 0.5f;
+                    AddInnerQuad(verts, uvs, normals, innerTris,
+                        new Vector3(ex, wy - pixH * 0.5f, hd),
+                        new Vector3(ex, wy - pixH * 0.5f, -hd),
+                        new Vector3(ex, wy + pixH * 0.5f, -hd),
+                        new Vector3(ex, wy + pixH * 0.5f, hd),
+                        Vector3.left, pixH, d);
+                    edgeCount++;
+                }
+                // Top neighbor is wall → quad facing +Y
+                if (py + 1 < mh && mask[(py + 1) * mw + px])
+                {
+                    float ey = wy + pixH * 0.5f;
+                    AddInnerQuad(verts, uvs, normals, innerTris,
+                        new Vector3(wx + pixW * 0.5f, ey, -hd),
+                        new Vector3(wx + pixW * 0.5f, ey, hd),
+                        new Vector3(wx - pixW * 0.5f, ey, hd),
+                        new Vector3(wx - pixW * 0.5f, ey, -hd),
+                        Vector3.up, pixW, d);
+                    edgeCount++;
+                }
+                // Bottom neighbor is wall → quad facing -Y
+                if (py - 1 >= 0 && mask[(py - 1) * mw + px])
+                {
+                    float ey = wy - pixH * 0.5f;
+                    AddInnerQuad(verts, uvs, normals, innerTris,
+                        new Vector3(wx - pixW * 0.5f, ey, -hd),
+                        new Vector3(wx - pixW * 0.5f, ey, hd),
+                        new Vector3(wx + pixW * 0.5f, ey, hd),
+                        new Vector3(wx + pixW * 0.5f, ey, -hd),
+                        Vector3.down, pixW, d);
+                    edgeCount++;
                 }
             }
         }
+
+        Debug.Log($"[WallBaker] Generated {edgeCount} inner wall quads");
+
+        Mesh mesh = new Mesh();
+        mesh.name = "WallMesh";
+        // Use 32-bit indices if we have lots of verts
+        if (verts.Count > 65000)
+            mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+        mesh.SetVertices(verts);
+        mesh.SetUVs(0, uvs);
+        mesh.SetNormals(normals);
+        mesh.subMeshCount = 2;
+        mesh.SetTriangles(faceTris, 0);  // Front/back faces
+        mesh.SetTriangles(innerTris, 1); // Inner walls
+        mesh.RecalculateTangents();
+        mesh.RecalculateBounds();
+        return mesh;
     }
 
-    private void DrawThickLine(Texture2D tex, Vector2 a, Vector2 b, int thickness, Color color)
+    private void AddQuad(List<Vector3> verts, List<Vector2> uvs, List<Vector3> normals,
+        List<int> tris, Vector3 bl, Vector3 br, Vector3 tr, Vector3 tl,
+        Vector3 normal, Vector2 uvBL, Vector2 uvBR, Vector2 uvTR, Vector2 uvTL)
     {
-        float dist = Vector2.Distance(a, b);
-        int steps = Mathf.CeilToInt(dist);
-        float halfThick = thickness * 0.5f;
-
-        for (int i = 0; i <= steps; i++)
-        {
-            float t = steps > 0 ? (float)i / steps : 0;
-            Vector2 point = Vector2.Lerp(a, b, t);
-            // Draw a filled circle at each step for a rounded thick line
-            DrawFilledCircle(tex, point, Mathf.RoundToInt(halfThick), color);
-        }
-    }
-
-    /// <summary>
-    /// Draws a thick line from the lowest visible joint in a leg chain
-    /// straight down to the bottom of the texture, opening the wall.
-    /// </summary>
-    private void OpenLegToBottom(Texture2D tex, PoseData pose, Vector2[] positions,
-        int[] jointIndices, int thickness, Color color)
-    {
-        // Find the lowest visible joint in the chain (hip -> knee -> ankle)
-        // "Lowest" in texture coords means smallest Y (bottom = 0)
-        Vector2 lowestPoint = Vector2.zero;
-        bool found = false;
-
-        foreach (int idx in jointIndices)
-        {
-            if (pose.keypoints[idx].confidence >= 0.3f)
-            {
-                if (!found || positions[idx].y < lowestPoint.y)
-                {
-                    lowestPoint = positions[idx];
-                    found = true;
-                }
-            }
-        }
-
-        if (!found) return;
-
-        // Draw from lowest joint straight down to bottom edge
-        Vector2 bottomPoint = new Vector2(lowestPoint.x, 0);
-        DrawThickLine(tex, lowestPoint, bottomPoint, thickness, color);
+        int s = verts.Count;
+        verts.Add(bl); verts.Add(br); verts.Add(tr); verts.Add(tl);
+        uvs.Add(uvBL); uvs.Add(uvBR); uvs.Add(uvTR); uvs.Add(uvTL);
+        normals.Add(normal); normals.Add(normal); normals.Add(normal); normals.Add(normal);
+        tris.Add(s); tris.Add(s + 2); tris.Add(s + 1);
+        tris.Add(s); tris.Add(s + 3); tris.Add(s + 2);
     }
 
     /// <summary>
-    /// Fills enclosed wall-colored regions with the cutout color.
-    /// Works by flood-filling from all edges to mark "outside" wall pixels,
-    /// then anything still wall-colored that wasn't reached is enclosed.
+    /// Adds an inner wall quad with UVs that tile the wall texture naturally.
+    /// U = position along the edge, V = depth through the wall.
     /// </summary>
-    private void FloodFillEnclosedRegions(Texture2D tex, Color cutoutColor)
+    private void AddInnerQuad(List<Vector3> verts, List<Vector2> uvs, List<Vector3> normals,
+        List<int> tris, Vector3 bl, Vector3 br, Vector3 tr, Vector3 tl,
+        Vector3 normal, float edgeSize, float depth)
     {
-        int w = tex.width;
-        int h = tex.height;
-        Color[] pixels = tex.GetPixels();
-        bool[] visited = new bool[w * h];
+        int s = verts.Count;
+        verts.Add(bl); verts.Add(br); verts.Add(tr); verts.Add(tl);
 
-        // A pixel is "wall" if it's not cutout (alpha > 0.5)
-        Queue<int> queue = new Queue<int>();
+        // UV: tile based on world-space size so texture scale matches the front face
+        float uScale = depth * textureTiling;
+        float vScale = edgeSize * textureTiling;
+        uvs.Add(new Vector2(0, 0));
+        uvs.Add(new Vector2(uScale, 0));
+        uvs.Add(new Vector2(uScale, vScale));
+        uvs.Add(new Vector2(0, vScale));
 
-        // Seed from all edge pixels that are wall-colored
-        for (int x = 0; x < w; x++)
+        normals.Add(normal); normals.Add(normal); normals.Add(normal); normals.Add(normal);
+        tris.Add(s); tris.Add(s + 2); tris.Add(s + 1);
+        tris.Add(s); tris.Add(s + 3); tris.Add(s + 2);
+    }
+
+    // =========================================================================
+    // HELPERS
+    // =========================================================================
+
+    private void MakeReadable(Texture2D tex, List<TextureImporter> restoreList)
+    {
+        string path = AssetDatabase.GetAssetPath(tex);
+        TextureImporter imp = AssetImporter.GetAtPath(path) as TextureImporter;
+        if (imp != null && !imp.isReadable)
         {
-            TrySeed(x, 0, w, h, pixels, visited, queue);
-            TrySeed(x, h - 1, w, h, pixels, visited, queue);
-        }
-        for (int y = 0; y < h; y++)
-        {
-            TrySeed(0, y, w, h, pixels, visited, queue);
-            TrySeed(w - 1, y, w, h, pixels, visited, queue);
-        }
-
-        // BFS flood fill from edges
-        while (queue.Count > 0)
-        {
-            int idx = queue.Dequeue();
-            int x = idx % w;
-            int y = idx / w;
-
-            if (x > 0) TrySeed(x - 1, y, w, h, pixels, visited, queue);
-            if (x < w - 1) TrySeed(x + 1, y, w, h, pixels, visited, queue);
-            if (y > 0) TrySeed(x, y - 1, w, h, pixels, visited, queue);
-            if (y < h - 1) TrySeed(x, y + 1, w, h, pixels, visited, queue);
-        }
-
-        // Any wall pixel not visited is enclosed — make it cutout
-        int filled = 0;
-        for (int i = 0; i < pixels.Length; i++)
-        {
-            if (!visited[i] && pixels[i].a > 0.5f)
-            {
-                pixels[i] = cutoutColor;
-                filled++;
-            }
-        }
-
-        if (filled > 0)
-        {
-            tex.SetPixels(pixels);
-            Debug.Log($"[WallBaker] Flood filled {filled} enclosed pixels");
+            imp.isReadable = true;
+            imp.SaveAndReimport();
+            restoreList.Add(imp);
         }
     }
 
-    private void TrySeed(int x, int y, int w, int h, Color[] pixels, bool[] visited, Queue<int> queue)
+    private void RestoreReadable(List<TextureImporter> importers)
     {
-        int idx = y * w + x;
-        if (visited[idx]) return;
-        if (pixels[idx].a < 0.5f) return; // Already cutout
-        visited[idx] = true;
-        queue.Enqueue(idx);
+        foreach (var imp in importers)
+        {
+            imp.isReadable = false;
+            imp.SaveAndReimport();
+        }
     }
 
     private void EnsureFolder(string folderPath)
     {
         if (AssetDatabase.IsValidFolder(folderPath)) return;
-
         string[] parts = folderPath.Split('/');
         string current = parts[0];
         for (int i = 1; i < parts.Length; i++)

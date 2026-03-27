@@ -1,0 +1,29 @@
+App: c:\Users\edcul\.vscode\extensions\ms-dotnettools.csharp-2.130.5-win32-x64\.roslyn\BuildHost-netcore\Microsoft.CodeAnalysis.Workspaces.MSBuild.BuildHost.dll
+Architecture: x64
+Framework: 'Microsoft.NETCore.App', version '8.0.0' (x64)
+.NET location: C:\Program Files\dotnet\
+
+The following frameworks were found:
+  7.0.2 at [C:\Program Files\dotnet\shared\Microsoft.NETCore.App]
+
+Learn about framework resolution:
+https://aka.ms/dotnet/app-launch-failed
+
+To install missing framework, download:
+https://aka.ms/dotnet-core-applaunch?framework=Microsoft.NETCore.App&framework_version=8.0.0&arch=x64&rid=win10-x64
+
+ ---> System.TimeoutException: The operation has timed out.
+   at System.IO.Pipes.NamedPipeClientStream.ConnectInternal(Int32 timeout, CancellationToken cancellationToken, Int32 startTime)
+   at System.Threading.ExecutionContext.RunFromThreadPoolDispatchLoop(Thread threadPoolThread, ExecutionContext executionContext, ContextCallback callback, Object state)
+--- End of stack trace from previous location ---
+   at System.Threading.ExecutionContext.RunFromThreadPoolDispatchLoop(Thread threadPoolThread, ExecutionContext executionContext, ContextCallback callback, Object state)
+   at System.Threading.Tasks.Task.ExecuteWithThreadLocal(Task& currentTaskSlot, Thread threadPoolThread)
+--- End of stack trace from previous location ---
+   at Microsoft.CodeAnalysis.MSBuild.BuildHostProcessManager.BuildHostProcess.ConnectAsync(String pipeName) in /_/src/Workspaces/MSBuild/Core/MSBuild/BuildHostProcessManager.cs:line 458
+   at Microsoft.CodeAnalysis.MSBuild.BuildHostProcessManager.<GetBuildHostAsync>g__NoLock_GetBuildHostAsync|16_0(BuildHostProcessKind buildHostKind, String projectOrSolutionFilePath, String dotnetPath, CancellationToken cancellationToken) in /_/src/Workspaces/MSBuild/Core/MSBuild/BuildHostProcessManager.cs:line 125
+   --- End of inner exception stack trace ---
+   at Microsoft.CodeAnalysis.MSBuild.BuildHostProcessManager.<GetBuildHostAsync>g__NoLock_GetBuildHostAsync|16_0(BuildHostProcessKind buildHostKind, String projectOrSolutionFilePath, String dotnetPath, CancellationToken cancellationToken) in /_/src/Workspaces/MSBuild/Core/MSBuild/BuildHostProcessManager.cs:line 134
+   at Microsoft.CodeAnalysis.MSBuild.BuildHostProcessManager.GetBuildHostAsync(BuildHostProcessKind buildHostKind, String projectOrSolutionFilePath, String dotnetPath, CancellationToken cancellationToken) in /_/src/Workspaces/MSBuild/Core/MSBuild/BuildHostProcessManager.cs:line 104
+   at Microsoft.CodeAnalysis.LanguageServer.FileBasedPrograms.CanonicalMiscFilesProjectLoader.TryLoadProjectInMSBuildHostAsync(BuildHostProcessManager buildHostProcessManager, String canonicalProjectPath, CancellationToken cancellationToken) in /_/src/LanguageServer/Microsoft.CodeAnalysis.LanguageServer/FileBasedPrograms/CanonicalMiscFilesProjectLoader.cs:line 194
+   at Microsoft.CodeAnalysis.LanguageServer.HostWorkspace.LanguageServerProjectLoader.ReloadProjectAsync(ProjectToLoad projectToLoad, ToastErrorReporter toastErrorReporter, BuildHostProcessManager buildHostProcessManager, CancellationToken cancellationToken) in /_/src/LanguageServer/Microsoft.CodeAnalysis.LanguageServer/HostWorkspace/LanguageServerProjectLoader.cs:line 248
+2026-03-26 16:45:26.795 [info] [textDocument/diagnostic] [LanguageServerProjectLoader] Completed (re)load of all projects in 00:01:00.0777192
