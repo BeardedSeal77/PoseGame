@@ -12,15 +12,21 @@ public class HumanoidPoseDriver : MonoBehaviour
     [SerializeField] private bool swapLeftRight;
     [SerializeField, Range(0.01f, 1f)] private float minimumConfidenceOverride = 0.5f;
     [SerializeField, Min(1f)] private float rotationResponsiveness = 12f;
+    [SerializeField] private bool driveRootYaw = true;
+    [SerializeField, Min(1f)] private float rootYawResponsiveness = 8f;
+    [SerializeField, Range(0f, 85f)] private float maxRootYawDegrees = 70f;
+    [SerializeField] private bool driveHandBones;
 
     private readonly PoseFrame workingFrame = new PoseFrame();
     private readonly Dictionary<PoseJointId, Vector3> normalizedJoints = new Dictionary<PoseJointId, Vector3>(PoseJointIdUtility.JointCount);
     private readonly List<BoneBinding> boneBindings = new List<BoneBinding>(8);
 
     private Vector3 restTorsoDirection = Vector3.up;
+    private Quaternion avatarRootInitialRotation = Quaternion.identity;
     private Quaternion chestInitialWorldRotation;
     private Quaternion spineInitialWorldRotation;
     private Quaternion hipsInitialWorldRotation;
+    private float referenceShoulderWidth;
     private Transform chestBone;
     private Transform spineBone;
     private Transform hipsBone;
@@ -79,6 +85,7 @@ public class HumanoidPoseDriver : MonoBehaviour
             return;
         }
 
+        ApplyRootYaw();
         ApplyTorsoRotation();
         ApplyBoneBindings();
     }
@@ -91,6 +98,9 @@ public class HumanoidPoseDriver : MonoBehaviour
         {
             return;
         }
+
+        avatarRootInitialRotation = avatarRoot != null ? avatarRoot.rotation : transform.rotation;
+        referenceShoulderWidth = 0f;
 
         hipsBone = animator.GetBoneTransform(HumanBodyBones.Hips);
         spineBone = animator.GetBoneTransform(HumanBodyBones.Spine);
@@ -114,9 +124,9 @@ public class HumanoidPoseDriver : MonoBehaviour
         restTorsoDirection = GetRestTorsoDirection();
 
         AddBinding(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, PoseJointId.LeftShoulder, PoseJointId.LeftElbow);
-        AddBinding(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, PoseJointId.LeftElbow, PoseJointId.LeftWrist);
         AddBinding(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, PoseJointId.RightShoulder, PoseJointId.RightElbow);
-        AddBinding(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, PoseJointId.RightElbow, PoseJointId.RightWrist);
+        AddBinding(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, PoseJointId.LeftElbow, PoseJointId.LeftWrist, driveIfEnabled: driveHandBones);
+        AddBinding(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, PoseJointId.RightElbow, PoseJointId.RightWrist, driveIfEnabled: driveHandBones);
         AddBinding(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, PoseJointId.LeftHip, PoseJointId.LeftKnee);
         AddBinding(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, PoseJointId.LeftKnee, PoseJointId.LeftAnkle);
         AddBinding(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, PoseJointId.RightHip, PoseJointId.RightKnee);
@@ -177,6 +187,50 @@ public class HumanoidPoseDriver : MonoBehaviour
         }
 
         return true;
+    }
+
+    private void ApplyRootYaw()
+    {
+        if (!driveRootYaw || avatarRoot == null)
+        {
+            return;
+        }
+
+        if (!TryGetNormalizedJoint(PoseJointId.LeftShoulder, out Vector3 leftShoulder) ||
+            !TryGetNormalizedJoint(PoseJointId.RightShoulder, out Vector3 rightShoulder) ||
+            !TryGetNormalizedJoint(PoseJointId.Nose, out Vector3 nose))
+        {
+            return;
+        }
+
+        Vector3 shoulderSpan = rightShoulder - leftShoulder;
+        float shoulderWidth = shoulderSpan.magnitude;
+        if (shoulderWidth < 0.05f)
+        {
+            return;
+        }
+
+        referenceShoulderWidth = Mathf.Max(referenceShoulderWidth, shoulderWidth);
+        if (referenceShoulderWidth < 0.05f)
+        {
+            return;
+        }
+
+        float widthRatio = Mathf.Clamp01(shoulderWidth / referenceShoulderWidth);
+        float unsignedYaw = Mathf.Acos(widthRatio) * Mathf.Rad2Deg;
+        if (unsignedYaw < 1f)
+        {
+            unsignedYaw = 0f;
+        }
+
+        Vector3 shoulderCenter = (leftShoulder + rightShoulder) * 0.5f;
+        float signedNoseOffset = (nose.x - shoulderCenter.x) / Mathf.Max(shoulderWidth * 0.5f, 0.001f);
+        float yawSign = Mathf.Abs(signedNoseOffset) > 0.08f ? Mathf.Sign(signedNoseOffset) : 0f;
+        float targetYaw = Mathf.Clamp(unsignedYaw, 0f, maxRootYawDegrees) * yawSign;
+
+        Quaternion targetRotation = avatarRootInitialRotation * Quaternion.AngleAxis(targetYaw, Vector3.up);
+        float blend = 1f - Mathf.Exp(-rootYawResponsiveness * Time.deltaTime);
+        avatarRoot.rotation = Quaternion.Slerp(avatarRoot.rotation, targetRotation, blend);
     }
 
     private void ApplyTorsoRotation()
@@ -268,8 +322,14 @@ public class HumanoidPoseDriver : MonoBehaviour
         HumanBodyBones childBoneId,
         PoseJointId startJoint,
         PoseJointId endJoint,
-        bool fallbackToSelf = false)
+        bool fallbackToSelf = false,
+        bool driveIfEnabled = true)
     {
+        if (!driveIfEnabled)
+        {
+            return;
+        }
+
         Transform bone = animator.GetBoneTransform(boneId);
         if (bone == null)
         {
