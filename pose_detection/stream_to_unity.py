@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 PREVIEW_WINDOW_NAME = "PoseGame Webcam Preview"
 
 
-def resize_to_cover(frame, target_width, target_height):
+def resize_to_letterbox(frame, target_width, target_height, bar_color=(24, 24, 24)):
     if target_width <= 0 or target_height <= 0:
         return frame
 
@@ -37,14 +37,27 @@ def resize_to_cover(frame, target_width, target_height):
     if source_width <= 0 or source_height <= 0:
         return frame
 
-    scale = max(target_width / source_width, target_height / source_height)
+    scale = min(target_width / source_width, target_height / source_height)
     resized_width = max(1, int(round(source_width * scale)))
     resized_height = max(1, int(round(source_height * scale)))
     resized = cv2.resize(frame, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
 
-    crop_x = max(0, (resized_width - target_width) // 2)
-    crop_y = max(0, (resized_height - target_height) // 2)
-    return resized[crop_y:crop_y + target_height, crop_x:crop_x + target_width]
+    output = cv2.copyMakeBorder(
+        resized,
+        top=0,
+        bottom=max(0, target_height - resized_height),
+        left=0,
+        right=max(0, target_width - resized_width),
+        borderType=cv2.BORDER_CONSTANT,
+        value=bar_color,
+    )
+
+    offset_x = max(0, (target_width - resized_width) // 2)
+    offset_y = max(0, (target_height - resized_height) // 2)
+    letterboxed = output[:target_height, :target_width].copy()
+    letterboxed[:, :] = bar_color
+    letterboxed[offset_y:offset_y + resized_height, offset_x:offset_x + resized_width] = resized
+    return letterboxed
 
 
 def build_packet(result, width, height):
@@ -155,7 +168,7 @@ def run(args):
 
                 preview_width = preview_width if preview_width > 0 else args.width
                 preview_height = preview_height if preview_height > 0 else args.height
-                preview_frame = resize_to_cover(annotated, preview_width, preview_height)
+                preview_frame = resize_to_letterbox(annotated, preview_width, preview_height)
 
                 cv2.imshow(PREVIEW_WINDOW_NAME, preview_frame)
                 key = cv2.waitKey(1) & 0xFF

@@ -13,11 +13,16 @@ public class HumanoidPoseDriver : MonoBehaviour
     [SerializeField, Range(0.01f, 1f)] private float minimumConfidenceOverride = 0.5f;
     [SerializeField, Min(1f)] private float rotationResponsiveness = 12f;
     [SerializeField] private bool driveRootYaw = true;
+    [SerializeField] private bool invertRootYaw;
     [SerializeField, Min(1f)] private float rootYawResponsiveness = 8f;
     [SerializeField, Range(0f, 85f)] private float maxRootYawDegrees = 70f;
+    [SerializeField] private bool driveHipHeight = true;
+    [SerializeField, Min(0.01f)] private float maxHipDrop = 0.2f;
+    [SerializeField, Min(1f)] private float hipHeightResponsiveness = 10f;
     [SerializeField] private bool driveHandBones;
 
     private readonly PoseFrame workingFrame = new PoseFrame();
+    private readonly Dictionary<PoseJointId, Vector3> rawJoints = new Dictionary<PoseJointId, Vector3>(PoseJointIdUtility.JointCount);
     private readonly Dictionary<PoseJointId, Vector3> normalizedJoints = new Dictionary<PoseJointId, Vector3>(PoseJointIdUtility.JointCount);
     private readonly List<BoneBinding> boneBindings = new List<BoneBinding>(8);
 
@@ -27,9 +32,12 @@ public class HumanoidPoseDriver : MonoBehaviour
     private Quaternion spineInitialWorldRotation;
     private Quaternion hipsInitialWorldRotation;
     private float referenceShoulderWidth;
+    private float referenceHipWidth;
+    private float referenceLegExtension;
     private Transform chestBone;
     private Transform spineBone;
     private Transform hipsBone;
+    private Vector3 hipsInitialLocalPosition;
 
     private void Reset()
     {
@@ -86,6 +94,7 @@ public class HumanoidPoseDriver : MonoBehaviour
         }
 
         ApplyRootYaw();
+        ApplyHipHeight();
         ApplyTorsoRotation();
         ApplyBoneBindings();
     }
@@ -101,6 +110,8 @@ public class HumanoidPoseDriver : MonoBehaviour
 
         avatarRootInitialRotation = avatarRoot != null ? avatarRoot.rotation : transform.rotation;
         referenceShoulderWidth = 0f;
+        referenceHipWidth = 0f;
+        referenceLegExtension = 0f;
 
         hipsBone = animator.GetBoneTransform(HumanBodyBones.Hips);
         spineBone = animator.GetBoneTransform(HumanBodyBones.Spine);
@@ -109,6 +120,7 @@ public class HumanoidPoseDriver : MonoBehaviour
         if (hipsBone != null)
         {
             hipsInitialWorldRotation = hipsBone.rotation;
+            hipsInitialLocalPosition = hipsBone.localPosition;
         }
 
         if (spineBone != null)
@@ -136,6 +148,7 @@ public class HumanoidPoseDriver : MonoBehaviour
 
     private bool BuildNormalizedPose(PoseFrame frame)
     {
+        rawJoints.Clear();
         normalizedJoints.Clear();
 
         float minimumConfidence = poseSource != null
@@ -177,12 +190,14 @@ public class HumanoidPoseDriver : MonoBehaviour
                 continue;
             }
 
-            Vector3 normalized = (worldPoint - hipCenter) / referenceScale;
             if (mirrorX)
             {
-                normalized.x *= -1f;
+                worldPoint.x *= -1f;
             }
 
+            rawJoints[jointId] = worldPoint;
+
+            Vector3 normalized = (worldPoint - hipCenter) / referenceScale;
             normalizedJoints[jointId] = normalized;
         }
 
@@ -196,41 +211,83 @@ public class HumanoidPoseDriver : MonoBehaviour
             return;
         }
 
-        if (!TryGetNormalizedJoint(PoseJointId.LeftShoulder, out Vector3 leftShoulder) ||
-            !TryGetNormalizedJoint(PoseJointId.RightShoulder, out Vector3 rightShoulder) ||
-            !TryGetNormalizedJoint(PoseJointId.Nose, out Vector3 nose))
+        if (!TryGetRawJoint(PoseJointId.LeftShoulder, out Vector3 leftShoulder) ||
+            !TryGetRawJoint(PoseJointId.RightShoulder, out Vector3 rightShoulder) ||
+            !TryGetRawJoint(PoseJointId.LeftHip, out Vector3 leftHip) ||
+            !TryGetRawJoint(PoseJointId.RightHip, out Vector3 rightHip) ||
+            !TryGetFacingAnchor(out Vector3 facingAnchor))
         {
             return;
         }
 
-        Vector3 shoulderSpan = rightShoulder - leftShoulder;
-        float shoulderWidth = shoulderSpan.magnitude;
-        if (shoulderWidth < 0.05f)
+        float shoulderWidth = Mathf.Abs(rightShoulder.x - leftShoulder.x);
+        float hipWidth = Mathf.Abs(rightHip.x - leftHip.x);
+        if (shoulderWidth < 0.01f || hipWidth < 0.01f)
         {
             return;
         }
 
         referenceShoulderWidth = Mathf.Max(referenceShoulderWidth, shoulderWidth);
-        if (referenceShoulderWidth < 0.05f)
+        referenceHipWidth = Mathf.Max(referenceHipWidth, hipWidth);
+        if (referenceShoulderWidth < 0.01f || referenceHipWidth < 0.01f)
         {
             return;
         }
 
-        float widthRatio = Mathf.Clamp01(shoulderWidth / referenceShoulderWidth);
-        float unsignedYaw = Mathf.Acos(widthRatio) * Mathf.Rad2Deg;
+        float shoulderRatio = Mathf.Clamp01(shoulderWidth / referenceShoulderWidth);
+        float hipRatio = Mathf.Clamp01(hipWidth / referenceHipWidth);
+        float widthRatio = Mathf.Min(shoulderRatio, hipRatio);
+        float agreement = 1f - Mathf.Clamp01(Mathf.Abs(shoulderRatio - hipRatio) * 2.5f);
+        float unsignedYaw = Mathf.Acos(widthRatio) * Mathf.Rad2Deg * agreement;
         if (unsignedYaw < 1f)
         {
             unsignedYaw = 0f;
         }
 
         Vector3 shoulderCenter = (leftShoulder + rightShoulder) * 0.5f;
-        float signedNoseOffset = (nose.x - shoulderCenter.x) / Mathf.Max(shoulderWidth * 0.5f, 0.001f);
-        float yawSign = Mathf.Abs(signedNoseOffset) > 0.08f ? Mathf.Sign(signedNoseOffset) : 0f;
+        float signedFacingOffset = (facingAnchor.x - shoulderCenter.x) / Mathf.Max(shoulderWidth * 0.5f, 0.001f);
+        float yawSign = Mathf.Abs(signedFacingOffset) > 0.08f ? Mathf.Sign(signedFacingOffset) : 0f;
         float targetYaw = Mathf.Clamp(unsignedYaw, 0f, maxRootYawDegrees) * yawSign;
+        if (invertRootYaw)
+        {
+            targetYaw *= -1f;
+        }
 
         Quaternion targetRotation = avatarRootInitialRotation * Quaternion.AngleAxis(targetYaw, Vector3.up);
         float blend = 1f - Mathf.Exp(-rootYawResponsiveness * Time.deltaTime);
         avatarRoot.rotation = Quaternion.Slerp(avatarRoot.rotation, targetRotation, blend);
+    }
+
+    private void ApplyHipHeight()
+    {
+        if (!driveHipHeight || hipsBone == null)
+        {
+            return;
+        }
+
+        if (!TryGetAverageRawJoint(PoseJointId.LeftHip, PoseJointId.RightHip, out Vector3 hipCenter) ||
+            !TryGetAverageRawJoint(PoseJointId.LeftAnkle, PoseJointId.RightAnkle, out Vector3 ankleCenter))
+        {
+            return;
+        }
+
+        float legExtension = Mathf.Abs(hipCenter.y - ankleCenter.y);
+        if (legExtension < 0.01f)
+        {
+            return;
+        }
+
+        referenceLegExtension = Mathf.Max(referenceLegExtension, legExtension);
+        if (referenceLegExtension < 0.01f)
+        {
+            return;
+        }
+
+        float extensionRatio = Mathf.Clamp01(legExtension / referenceLegExtension);
+        float crouchAmount = 1f - extensionRatio;
+        Vector3 targetLocalPosition = hipsInitialLocalPosition + (Vector3.down * (crouchAmount * maxHipDrop));
+        float blend = 1f - Mathf.Exp(-hipHeightResponsiveness * Time.deltaTime);
+        hipsBone.localPosition = Vector3.Lerp(hipsBone.localPosition, targetLocalPosition, blend);
     }
 
     private void ApplyTorsoRotation()
@@ -377,6 +434,58 @@ public class HumanoidPoseDriver : MonoBehaviour
     private bool TryGetNormalizedJoint(PoseJointId jointId, out Vector3 position)
     {
         return normalizedJoints.TryGetValue(jointId, out position);
+    }
+
+    private bool TryGetRawJoint(PoseJointId jointId, out Vector3 position)
+    {
+        return rawJoints.TryGetValue(jointId, out position);
+    }
+
+    private bool TryGetFacingAnchor(out Vector3 position)
+    {
+        if (TryGetRawJoint(PoseJointId.Nose, out position))
+        {
+            return true;
+        }
+
+        if (TryGetAverageRawJoint(PoseJointId.LeftEye, PoseJointId.RightEye, out position))
+        {
+            return true;
+        }
+
+        if (TryGetAverageRawJoint(PoseJointId.LeftEar, PoseJointId.RightEar, out position))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryGetAverageRawJoint(PoseJointId first, PoseJointId second, out Vector3 position)
+    {
+        bool hasFirst = TryGetRawJoint(first, out Vector3 a);
+        bool hasSecond = TryGetRawJoint(second, out Vector3 b);
+
+        if (hasFirst && hasSecond)
+        {
+            position = (a + b) * 0.5f;
+            return true;
+        }
+
+        if (hasFirst)
+        {
+            position = a;
+            return true;
+        }
+
+        if (hasSecond)
+        {
+            position = b;
+            return true;
+        }
+
+        position = default;
+        return false;
     }
 
     private PoseJointId ResolveSourceJoint(PoseJointId jointId)
