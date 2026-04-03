@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: f4701a0243e3851439aa8ecb80db3d53
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 2100000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 273048
+  packageName: Hero Pack
+  packageVersion: 1.1
+  assetPath: Assets/Pack_Heros/Materials/ColorPalette.mat
+  uploadId: 830396

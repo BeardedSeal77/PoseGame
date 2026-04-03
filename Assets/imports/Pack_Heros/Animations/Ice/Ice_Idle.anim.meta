@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 125abff0c2ae4a543a13cc3d12fa38c0
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 7400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 273048
+  packageName: Hero Pack
+  packageVersion: 1.1
+  assetPath: Assets/Pack_Heros/Animations/Ice/Ice_Idle.anim
+  uploadId: 830396

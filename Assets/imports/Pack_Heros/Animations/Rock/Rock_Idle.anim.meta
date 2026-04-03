@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: b5d316cc1575cb64c90cd4b704e71b65
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 7400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 273048
+  packageName: Hero Pack
+  packageVersion: 1.1
+  assetPath: Assets/Pack_Heros/Animations/Rock/Rock_Idle.anim
+  uploadId: 830396

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 141ae2d1f8000b346babef9d0d57adf4
+NativeFormatImporter:
+  externalObjects: {}
+  mainObjectFileID: 7400000
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 273048
+  packageName: Hero Pack
+  packageVersion: 1.1
+  assetPath: Assets/Pack_Heros/Animations/Ice/Ice_Death.anim
+  uploadId: 830396
