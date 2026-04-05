@@ -14,6 +14,7 @@ public class ScreenWallFitController : MonoBehaviour
     [SerializeField] private string shapeResourcesFolder = "WallShapes";
     [SerializeField] private Camera targetCamera;
     [SerializeField] private Animator targetAnimator;
+    [SerializeField] private GameManager gameManager;
 
     [Header("Flow")]
     [SerializeField] private bool playOnStart = true;
@@ -60,6 +61,7 @@ public class ScreenWallFitController : MonoBehaviour
         targetCamera = Camera.main;
         targetAnimator = FindFirstObjectByType<Animator>();
         wallDefinition = FindFirstObjectByType<RectangleWallDefinition>();
+        gameManager = FindFirstObjectByType<GameManager>();
         useShapeFolder = true;
     }
 
@@ -78,6 +80,11 @@ public class ScreenWallFitController : MonoBehaviour
         if (wallDefinition == null)
         {
             wallDefinition = FindFirstObjectByType<RectangleWallDefinition>();
+        }
+
+        if (gameManager == null)
+        {
+            gameManager = FindFirstObjectByType<GameManager>();
         }
 
         EnsureOverlay();
@@ -114,6 +121,14 @@ public class ScreenWallFitController : MonoBehaviour
     {
         if (!TryPrepareRun())
         {
+            return;
+        }
+
+        EnsureOverlay();
+        if (overlay == null)
+        {
+            Debug.LogError("[ScreenWallFitController] Failed to create the runtime overlay.");
+            state = WallState.Idle;
             return;
         }
 
@@ -171,6 +186,17 @@ public class ScreenWallFitController : MonoBehaviour
 
     private void UpdateShrink()
     {
+        if (overlay == null)
+        {
+            EnsureOverlay();
+            if (overlay == null)
+            {
+                Debug.LogError("[ScreenWallFitController] Overlay is null during UpdateShrink.");
+                state = WallState.Idle;
+                return;
+            }
+        }
+
         float duration = Mathf.Max(0.05f, currentShrinkDuration);
         stateTime += Time.deltaTime;
 
@@ -185,6 +211,27 @@ public class ScreenWallFitController : MonoBehaviour
         }
 
         lastResultPassed = EvaluateCurrentPose();
+
+        if (!lastResultPassed)
+        {
+            if (gameManager == null)
+            {
+                gameManager = GameManager.Instance != null
+                    ? GameManager.Instance
+                    : FindFirstObjectByType<GameManager>();
+            }
+
+            if (gameManager != null)
+            {
+                Debug.Log("[ScreenWallFitController] Pose failed. Losing one life.");
+                gameManager.LoseLife();
+            }
+            else
+            {
+                Debug.LogWarning("[ScreenWallFitController] Pose failed, but no GameManager was found in the scene.");
+            }
+        }
+
         stateTime = 0f;
         state = WallState.Flashing;
         overlay.SetFlashColor(lastResultPassed ? successFlashColor : failureFlashColor, 1f);
@@ -192,6 +239,17 @@ public class ScreenWallFitController : MonoBehaviour
 
     private void UpdateFlash()
     {
+        if (overlay == null)
+        {
+            EnsureOverlay();
+            if (overlay == null)
+            {
+                Debug.LogError("[ScreenWallFitController] Overlay is null during UpdateFlash.");
+                state = WallState.Idle;
+                return;
+            }
+        }
+
         stateTime += Time.deltaTime;
         float alpha = 1f - Mathf.Clamp01(stateTime / Mathf.Max(0.05f, flashDuration));
         Color flashColor = lastResultPassed ? successFlashColor : failureFlashColor;
