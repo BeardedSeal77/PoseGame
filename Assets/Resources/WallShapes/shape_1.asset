@@ -1,0 +1,42 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a8059d47793ed804f97f9a4fded79d3d, type: 3}
+  m_Name: shape_1
+  m_EditorClassIdentifier: Assembly-CSharp::PolygonWallShapeAsset
+  vertices:
+  - {x: 0.43815657, y: 0}
+  - {x: 0.5, y: 0}
+  - {x: 0.5, y: 0.1}
+  - {x: 0.52500004, y: 0.1}
+  - {x: 0.575, y: 0}
+  - {x: 0.625, y: 0}
+  - {x: 0.65000004, y: 0.05}
+  - {x: 0.575, y: 0.175}
+  - {x: 0.575, y: 0.32500002}
+  - {x: 0.675, y: 0.175}
+  - {x: 0.7, y: 0.25}
+  - {x: 0.575, y: 0.45000002}
+  - {x: 0.575, y: 0.675}
+  - {x: 0.425, y: 0.675}
+  - {x: 0.425, y: 0.52500004}
+  - {x: 0.375, y: 0.65000004}
+  - {x: 0.31088832, y: 0.58717394}
+  - {x: 0.43622252, y: 0.29414007}
+  shrinkDuration: 2.5
+  orbTargets: []
+  hasReferenceAvatarBounds: 0
+  referenceAvatarViewportBounds:
+    serializedVersion: 2
+    x: 0.3
+    y: 0.1
+    width: 0.4
+    height: 0.8

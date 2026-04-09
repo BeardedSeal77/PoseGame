@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using LibTessDotNet;
 
 [DisallowMultipleComponent]
 public class ScreenWallFitController : MonoBehaviour
@@ -20,9 +21,23 @@ public class ScreenWallFitController : MonoBehaviour
     [SerializeField] private bool playOnStart = true;
     [SerializeField] private bool loop;
     [SerializeField, Min(0f)] private float loopDelay = 1.25f;
+    [SerializeField] private bool autoAlignToShapeReference = true;
+
+    [Header("3D Wall")]
+    [SerializeField] private bool useThreeDimensionalWall = true;
+    [SerializeField, Min(0.05f)] private float wallStartDepth = 0.75f;
+    [SerializeField, Min(0.02f)] private float wallThickness = 0.35f;
+    [SerializeField] private Color wallColor = new Color(0.38f, 0.4f, 0.42f, 1f);
+    [SerializeField] private Material wallMaterial;
+    [SerializeField] private Texture2D wallTexture;
+    [SerializeField] private Vector2 wallTextureTiling = new Vector2(0.45f, 0.45f);
+    [SerializeField, Range(0f, 1f)] private float wallSmoothness = 0.15f;
 
     [Header("Scoring")]
     [SerializeField, Range(0f, 0.08f)] private float fitPadding = 0.015f;
+    [SerializeField, Range(0.5f, 2f)] private float orbRadiusMultiplier = 1f;
+    [SerializeField] private Color orbInactiveColor = new Color(1f, 0.75f, 0.2f, 0.9f);
+    [SerializeField] private Color orbActiveColor = new Color(0.15f, 1f, 0.35f, 0.95f);
 
     [Header("Overlay")]
     [SerializeField, Range(0.001f, 0.03f)] private float outlineThickness = 0.006f;
@@ -38,15 +53,20 @@ public class ScreenWallFitController : MonoBehaviour
     private readonly List<Vector2> targetShapePolygon = new List<Vector2>(16);
     private readonly List<Vector2> startShapePolygon = new List<Vector2>(16);
     private readonly List<Vector2> animatedShapePolygon = new List<Vector2>(16);
+    private readonly List<WallOrbTargetData> activeOrbTargets = new List<WallOrbTargetData>(8);
+    private readonly List<bool> orbHitStates = new List<bool>(8);
     private readonly Rect fullScreenRect = new Rect(0f, 0f, 1f, 1f);
 
     private Rect currentCutoutRect;
     private Rect targetCutoutRect;
     private RuntimeOverlay overlay;
+    private RuntimeWall runtimeWall;
     private WallState state;
     private float stateTime;
     private bool lastResultPassed;
     private float currentShrinkDuration;
+    private float currentWallStartOffset;
+    private float currentWallTargetDepth;
 
     private enum WallState
     {
@@ -117,6 +137,28 @@ public class ScreenWallFitController : MonoBehaviour
         }
     }
 
+    /// <summary>True when no wall cycle is running (Idle state).</summary>
+    public bool IsIdle => state == WallState.Idle;
+
+    /// <summary>
+    /// Immediately stops the current wall cycle, hides all visuals, and
+    /// resets to Idle. Call this when transitioning to menus / game over.
+    /// </summary>
+    public void StopAndClear()
+    {
+        state = WallState.Idle;
+        stateTime = 0f;
+
+        if (overlay != null)
+        {
+            overlay.SetFlashColor(Color.clear, 0f);
+            overlay.SetVisible(false);
+        }
+
+        if (runtimeWall != null)
+            runtimeWall.SetVisible(false);
+    }
+
     public void BeginWall()
     {
         if (!TryPrepareRun())
@@ -137,9 +179,27 @@ public class ScreenWallFitController : MonoBehaviour
         CopyPolygon(startShapePolygon, animatedShapePolygon);
         stateTime = 0f;
         state = WallState.Shrinking;
-        overlay.SetVisible(true);
-        overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+        float startDepth = Mathf.Max(targetCamera.nearClipPlane + 0.05f, wallStartDepth);
+        currentWallTargetDepth = Mathf.Max(startDepth + 0.1f, EstimateAvatarDepth() - (wallThickness * 0.5f));
+        currentWallStartOffset = startDepth - currentWallTargetDepth;
+
+        if (useThreeDimensionalWall)
+        {
+            EnsureRuntimeWall();
+            runtimeWall.SetVisible(true);
+            runtimeWall.UpdateMesh(targetShapePolygon, currentWallTargetDepth, wallThickness, wallColor, wallMaterial, wallTexture, wallTextureTiling, wallSmoothness);
+            runtimeWall.SetTravelOffset(currentWallStartOffset);
+            overlay.SetVisible(true);
+            overlay.ApplyOverlay(null, targetShapePolygon, outlineThickness, Color.clear, outlineColor);
+        }
+        else
+        {
+            overlay.SetVisible(true);
+            overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+        }
+
         overlay.SetFlashColor(Color.clear, 0f);
+        overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
     }
 
     private bool TryPrepareRun()
@@ -178,6 +238,8 @@ public class ScreenWallFitController : MonoBehaviour
             targetCutoutRect = wallDefinition.TargetViewportRect;
             currentShrinkDuration = wallDefinition.ShrinkDuration;
             SetRectPolygon(targetCutoutRect, targetShapePolygon);
+            activeOrbTargets.Clear();
+            orbHitStates.Clear();
         }
 
         CacheTrackedSegments();
@@ -186,7 +248,7 @@ public class ScreenWallFitController : MonoBehaviour
 
     private void UpdateShrink()
     {
-        if (overlay == null)
+        if (!useThreeDimensionalWall && overlay == null)
         {
             EnsureOverlay();
             if (overlay == null)
@@ -201,9 +263,24 @@ public class ScreenWallFitController : MonoBehaviour
         stateTime += Time.deltaTime;
 
         float t = Mathf.Clamp01(stateTime / duration);
-        LerpPolygon(startShapePolygon, targetShapePolygon, t, animatedShapePolygon);
-        currentCutoutRect = BuildBounds(animatedShapePolygon);
-        overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+        UpdateOrbHitStates();
+
+        if (useThreeDimensionalWall)
+        {
+            EnsureRuntimeWall();
+            float offset = Mathf.Lerp(currentWallStartOffset, 0f, t);
+            runtimeWall.SetTravelOffset(offset);
+            overlay.SetVisible(true);
+            overlay.ApplyOverlay(null, targetShapePolygon, outlineThickness, Color.clear, outlineColor);
+            overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
+        }
+        else
+        {
+            LerpPolygon(startShapePolygon, targetShapePolygon, t, animatedShapePolygon);
+            currentCutoutRect = BuildBounds(animatedShapePolygon);
+            overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+            overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
+        }
 
         if (t < 1f)
         {
@@ -211,16 +288,17 @@ public class ScreenWallFitController : MonoBehaviour
         }
 
         lastResultPassed = EvaluateCurrentPose();
+        int orbHits = CountSatisfiedOrbs();
+
+        if (gameManager == null)
+        {
+            gameManager = GameManager.Instance != null
+                ? GameManager.Instance
+                : FindFirstObjectByType<GameManager>();
+        }
 
         if (!lastResultPassed)
         {
-            if (gameManager == null)
-            {
-                gameManager = GameManager.Instance != null
-                    ? GameManager.Instance
-                    : FindFirstObjectByType<GameManager>();
-            }
-
             if (gameManager != null)
             {
                 Debug.Log("[ScreenWallFitController] Pose failed. Losing one life.");
@@ -231,9 +309,19 @@ public class ScreenWallFitController : MonoBehaviour
                 Debug.LogWarning("[ScreenWallFitController] Pose failed, but no GameManager was found in the scene.");
             }
         }
+        else if (gameManager != null)
+        {
+            gameManager.RegisterWallResult(true, orbHits, activeOrbTargets.Count);
+        }
 
         stateTime = 0f;
         state = WallState.Flashing;
+
+        if (runtimeWall != null)
+        {
+            runtimeWall.SetVisible(false);
+        }
+
         overlay.SetFlashColor(lastResultPassed ? successFlashColor : failureFlashColor, 1f);
     }
 
@@ -253,15 +341,24 @@ public class ScreenWallFitController : MonoBehaviour
         stateTime += Time.deltaTime;
         float alpha = 1f - Mathf.Clamp01(stateTime / Mathf.Max(0.05f, flashDuration));
         Color flashColor = lastResultPassed ? successFlashColor : failureFlashColor;
+        overlay.SetVisible(true);
         overlay.SetFlashColor(flashColor, alpha);
-        overlay.ApplyOverlay(targetShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+        if (useThreeDimensionalWall)
+        {
+            overlay.ApplyOverlay(null, null, outlineThickness, Color.clear, Color.clear);
+        }
+        else
+        {
+            overlay.ApplyOverlay(targetShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+            overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
+        }
 
         if (alpha > 0f)
         {
             return;
         }
 
-        if (loop)
+        if (loop && (GameManager.Instance == null || GameManager.Instance.CurrentState == GameManager.GameState.Playing))
         {
             state = WallState.WaitingToLoop;
             stateTime = 0f;
@@ -269,6 +366,7 @@ public class ScreenWallFitController : MonoBehaviour
         }
 
         state = WallState.Idle;
+        overlay.SetVisible(false);
     }
 
     private void UpdateLoopDelay()
@@ -287,6 +385,8 @@ public class ScreenWallFitController : MonoBehaviour
         targetShapePolygon.Clear();
         startShapePolygon.Clear();
         animatedShapePolygon.Clear();
+        activeOrbTargets.Clear();
+        orbHitStates.Clear();
 
         if (!useShapeFolder)
         {
@@ -299,7 +399,7 @@ public class ScreenWallFitController : MonoBehaviour
         for (int index = 0; index < rectangleShapes.Length; index++)
         {
             RectangleWallShapeAsset shape = rectangleShapes[index];
-            loadedShapes.Add(new WallShapeData(shape.name, shape.TargetViewportRect, shape.ShrinkDuration, BuildRectPolygonArray(shape.TargetViewportRect)));
+            loadedShapes.Add(new WallShapeData(shape.name, shape.TargetViewportRect, shape.ShrinkDuration, BuildRectPolygonArray(shape.TargetViewportRect), Array.Empty<WallOrbTargetData>(), false, default));
         }
 
         PolygonWallShapeAsset[] polygonShapes = Resources.LoadAll<PolygonWallShapeAsset>(normalizedFolder);
@@ -313,7 +413,7 @@ public class ScreenWallFitController : MonoBehaviour
                 continue;
             }
 
-            loadedShapes.Add(new WallShapeData(shape.name, BuildBounds(vertices), shape.ShrinkDuration, vertices));
+            loadedShapes.Add(new WallShapeData(shape.name, BuildBounds(vertices), shape.ShrinkDuration, vertices, CopyOrbTargets(shape.OrbTargets), shape.HasReferenceAvatarBounds, shape.ReferenceAvatarViewportBounds));
         }
 
         loadedShapes.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
@@ -345,6 +445,19 @@ public class ScreenWallFitController : MonoBehaviour
         currentShrinkDuration = selectedShape.ShrinkDuration;
         targetShapePolygon.Clear();
         targetShapePolygon.AddRange(selectedShape.PolygonVertices);
+        activeOrbTargets.Clear();
+        activeOrbTargets.AddRange(selectedShape.OrbTargets);
+        orbHitStates.Clear();
+        for (int index = 0; index < activeOrbTargets.Count; index++)
+        {
+            orbHitStates.Add(false);
+        }
+
+        if (autoAlignToShapeReference)
+        {
+            AlignAvatarToShapeReference(selectedShape);
+        }
+
         Debug.Log($"[ScreenWallFitController] Selected wall shape '{selectedShape.Name}' with {selectedShape.PolygonVertices.Length} vertices.");
 
         return true;
@@ -431,6 +544,63 @@ public class ScreenWallFitController : MonoBehaviour
         return true;
     }
 
+    private void UpdateOrbHitStates()
+    {
+        for (int index = 0; index < orbHitStates.Count; index++)
+        {
+            orbHitStates[index] = IsOrbSatisfied(activeOrbTargets[index]);
+        }
+    }
+
+    private int CountSatisfiedOrbs()
+    {
+        int count = 0;
+        for (int index = 0; index < orbHitStates.Count; index++)
+        {
+            if (orbHitStates[index])
+            {
+                count += 1;
+            }
+        }
+
+        return count;
+    }
+
+    private bool IsOrbSatisfied(WallOrbTargetData orbTarget)
+    {
+        float radius = orbTarget.radius * orbRadiusMultiplier;
+        float squaredRadius = radius * radius;
+
+        for (int index = 0; index < trackedSegments.Count; index++)
+        {
+            TrackedSegment segment = trackedSegments[index];
+            if (segment.start == null || segment.end == null)
+            {
+                continue;
+            }
+
+            int samples = Mathf.Max(2, segment.sampleCount);
+            for (int sampleIndex = 0; sampleIndex < samples; sampleIndex++)
+            {
+                float t = samples == 1 ? 0f : sampleIndex / (float)(samples - 1);
+                Vector3 worldPoint = Vector3.Lerp(segment.start.position, segment.end.position, t);
+                Vector3 viewportPoint = targetCamera.WorldToViewportPoint(worldPoint);
+                if (viewportPoint.z <= 0f)
+                {
+                    continue;
+                }
+
+                Vector2 delta = new Vector2(viewportPoint.x, viewportPoint.y) - orbTarget.viewportPosition;
+                if (delta.sqrMagnitude <= squaredRadius)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     private void CacheTrackedSegments()
     {
         trackedSegments.Clear();
@@ -514,6 +684,62 @@ public class ScreenWallFitController : MonoBehaviour
         overlay = new RuntimeOverlay(canvasRect);
     }
 
+    private void EnsureRuntimeWall()
+    {
+        if (runtimeWall != null)
+        {
+            return;
+        }
+
+        runtimeWall = new RuntimeWall(targetCamera, transform);
+    }
+
+    private float EstimateAvatarDepth()
+    {
+        if (targetCamera == null || targetAnimator == null)
+        {
+            return wallStartDepth + wallThickness + 1f;
+        }
+
+        HumanBodyBones[] sampledBones =
+        {
+            HumanBodyBones.Head,
+            HumanBodyBones.Chest,
+            HumanBodyBones.Hips,
+            HumanBodyBones.LeftHand,
+            HumanBodyBones.RightHand,
+            HumanBodyBones.LeftFoot,
+            HumanBodyBones.RightFoot,
+        };
+
+        float depthSum = 0f;
+        int depthCount = 0;
+        for (int index = 0; index < sampledBones.Length; index++)
+        {
+            Transform bone = targetAnimator.GetBoneTransform(sampledBones[index]);
+            if (bone == null)
+            {
+                continue;
+            }
+
+            Vector3 localPoint = targetCamera.transform.InverseTransformPoint(bone.position);
+            if (localPoint.z <= targetCamera.nearClipPlane)
+            {
+                continue;
+            }
+
+            depthSum += localPoint.z;
+            depthCount += 1;
+        }
+
+        if (depthCount == 0)
+        {
+            return wallStartDepth + wallThickness + 1f;
+        }
+
+        return depthSum / depthCount;
+    }
+
     private static Rect LerpRect(Rect from, Rect to, float t)
     {
         Vector2 min = Vector2.Lerp(from.min, to.min, t);
@@ -572,65 +798,71 @@ public class ScreenWallFitController : MonoBehaviour
             return;
         }
 
-        Vector2 centroid = Vector2.zero;
-        for (int index = 0; index < targetPolygon.Count; index++)
+        float expansion = 1.25f;
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            centroid += targetPolygon[index];
+            destination.Clear();
+            bool clockwise = SignedArea(targetPolygon) <= 0f;
+            for (int index = 0; index < targetPolygon.Count; index++)
+            {
+                Vector2 previous = targetPolygon[(index - 1 + targetPolygon.Count) % targetPolygon.Count];
+                Vector2 current = targetPolygon[index];
+                Vector2 next = targetPolygon[(index + 1) % targetPolygon.Count];
+                Vector2 outward = GetOutwardVertexDirection(previous, current, next, clockwise);
+                destination.Add(current + (outward * expansion));
+            }
+
+            if (ContainsPointInPolygon(new Vector2(0f, 0f), destination) &&
+                ContainsPointInPolygon(new Vector2(1f, 0f), destination) &&
+                ContainsPointInPolygon(new Vector2(1f, 1f), destination) &&
+                ContainsPointInPolygon(new Vector2(0f, 1f), destination))
+            {
+                return;
+            }
+
+            expansion *= 1.8f;
+        }
+    }
+
+    private void AlignAvatarToShapeReference(WallShapeData shape)
+    {
+        if (!shape.HasReferenceAvatarBounds || targetAnimator == null || targetCamera == null)
+        {
+            return;
         }
 
-        centroid /= targetPolygon.Count;
-
-        float uniformScale = 1f;
-
-        for (int index = 0; index < targetPolygon.Count; index++)
+        Transform playerRoot = targetAnimator.transform.parent;
+        if (playerRoot == null)
         {
-            Vector2 target = targetPolygon[index];
-            Vector2 direction = target - centroid;
-            if (direction.sqrMagnitude < 0.000001f)
-            {
-                continue;
-            }
-
-            float scale = float.PositiveInfinity;
-            if (direction.x > 0f)
-            {
-                scale = Mathf.Min(scale, (1f - centroid.x) / direction.x);
-            }
-            else if (direction.x < 0f)
-            {
-                scale = Mathf.Min(scale, (0f - centroid.x) / direction.x);
-            }
-
-            if (direction.y > 0f)
-            {
-                scale = Mathf.Min(scale, (1f - centroid.y) / direction.y);
-            }
-            else if (direction.y < 0f)
-            {
-                scale = Mathf.Min(scale, (0f - centroid.y) / direction.y);
-            }
-
-            if (float.IsInfinity(scale) || float.IsNaN(scale) || scale < 0f)
-            {
-                scale = 1f;
-            }
-
-            uniformScale = Mathf.Max(uniformScale, scale);
+            return;
         }
 
-        uniformScale *= 1.01f;
-
-        for (int index = 0; index < targetPolygon.Count; index++)
+        for (int iteration = 0; iteration < 3; iteration++)
         {
-            Vector2 target = targetPolygon[index];
-            Vector2 direction = target - centroid;
-            if (direction.sqrMagnitude < 0.000001f)
+            if (!TryGetAvatarViewportBounds(targetAnimator, targetCamera, out Rect currentBounds))
             {
-                destination.Add(target);
-                continue;
+                return;
             }
 
-            destination.Add(centroid + (direction * uniformScale));
+            float currentHeight = Mathf.Max(0.0001f, currentBounds.height);
+            float targetHeight = Mathf.Max(0.0001f, shape.ReferenceAvatarViewportBounds.height);
+            float depth = Vector3.Dot(targetAnimator.transform.position - targetCamera.transform.position, targetCamera.transform.forward);
+            float desiredDepth = Mathf.Max(targetCamera.nearClipPlane + 0.25f, depth * (currentHeight / targetHeight));
+            float depthDelta = desiredDepth - depth;
+            playerRoot.position += targetCamera.transform.forward * depthDelta;
+
+            if (!TryGetAvatarViewportBounds(targetAnimator, targetCamera, out currentBounds))
+            {
+                return;
+            }
+
+            float alignedDepth = Vector3.Dot(targetAnimator.transform.position - targetCamera.transform.position, targetCamera.transform.forward);
+            Vector2 currentCenter = currentBounds.center;
+            Vector2 desiredCenter = shape.ReferenceAvatarViewportBounds.center;
+            Vector3 currentWorldCenter = targetCamera.ViewportToWorldPoint(new Vector3(currentCenter.x, currentCenter.y, alignedDepth));
+            Vector3 desiredWorldCenter = targetCamera.ViewportToWorldPoint(new Vector3(currentCenter.x, desiredCenter.y, alignedDepth));
+            float yDelta = desiredWorldCenter.y - currentWorldCenter.y;
+            playerRoot.position += Vector3.up * yDelta;
         }
     }
 
@@ -655,6 +887,22 @@ public class ScreenWallFitController : MonoBehaviour
         for (int index = 0; index < vertices.Count; index++)
         {
             result[index] = vertices[index];
+        }
+
+        return result;
+    }
+
+    private static WallOrbTargetData[] CopyOrbTargets(IReadOnlyList<WallOrbTargetData> orbTargets)
+    {
+        if (orbTargets == null || orbTargets.Count == 0)
+        {
+            return Array.Empty<WallOrbTargetData>();
+        }
+
+        WallOrbTargetData[] result = new WallOrbTargetData[orbTargets.Count];
+        for (int index = 0; index < orbTargets.Count; index++)
+        {
+            result[index] = orbTargets[index];
         }
 
         return result;
@@ -755,6 +1003,101 @@ public class ScreenWallFitController : MonoBehaviour
         return a + (ab * t);
     }
 
+    private static float SignedArea(IReadOnlyList<Vector2> polygon)
+    {
+        float area = 0f;
+        for (int index = 0; index < polygon.Count; index++)
+        {
+            Vector2 current = polygon[index];
+            Vector2 next = polygon[(index + 1) % polygon.Count];
+            area += (current.x * next.y) - (next.x * current.y);
+        }
+
+        return area * 0.5f;
+    }
+
+    private static Vector2 GetOutwardVertexDirection(Vector2 previous, Vector2 current, Vector2 next, bool clockwise)
+    {
+        Vector2 previousEdge = (current - previous).normalized;
+        Vector2 nextEdge = (next - current).normalized;
+
+        Vector2 previousNormal = clockwise
+            ? new Vector2(previousEdge.y, -previousEdge.x)
+            : new Vector2(-previousEdge.y, previousEdge.x);
+        Vector2 nextNormal = clockwise
+            ? new Vector2(nextEdge.y, -nextEdge.x)
+            : new Vector2(-nextEdge.y, nextEdge.x);
+
+        Vector2 direction = previousNormal + nextNormal;
+        if (direction.sqrMagnitude < 0.000001f)
+        {
+            direction = previousNormal.sqrMagnitude > 0.000001f ? previousNormal : nextNormal;
+        }
+
+        return direction.normalized;
+    }
+
+    private static bool TryGetAvatarViewportBounds(Animator animator, Camera camera, out Rect viewportBounds)
+    {
+        viewportBounds = default;
+        if (animator == null || camera == null || !animator.isHuman)
+        {
+            return false;
+        }
+
+        HumanBodyBones[] trackedBones =
+        {
+            HumanBodyBones.Head,
+            HumanBodyBones.Neck,
+            HumanBodyBones.Chest,
+            HumanBodyBones.Hips,
+            HumanBodyBones.LeftShoulder,
+            HumanBodyBones.RightShoulder,
+            HumanBodyBones.LeftHand,
+            HumanBodyBones.RightHand,
+            HumanBodyBones.LeftFoot,
+            HumanBodyBones.RightFoot,
+        };
+
+        bool foundAny = false;
+        Vector2 min = Vector2.one;
+        Vector2 max = Vector2.zero;
+        for (int index = 0; index < trackedBones.Length; index++)
+        {
+            Transform bone = animator.GetBoneTransform(trackedBones[index]);
+            if (bone == null)
+            {
+                continue;
+            }
+
+            Vector3 viewport = camera.WorldToViewportPoint(bone.position);
+            if (viewport.z <= 0f)
+            {
+                continue;
+            }
+
+            Vector2 point = new Vector2(viewport.x, viewport.y);
+            if (!foundAny)
+            {
+                min = point;
+                max = point;
+                foundAny = true;
+                continue;
+            }
+
+            min = Vector2.Min(min, point);
+            max = Vector2.Max(max, point);
+        }
+
+        if (!foundAny)
+        {
+            return false;
+        }
+
+        viewportBounds = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        return true;
+    }
+
     private static Vector2 ClampViewportPoint(Vector2 point)
     {
         return new Vector2(
@@ -769,20 +1112,350 @@ public class ScreenWallFitController : MonoBehaviour
         public int sampleCount;
     }
 
+    private sealed class RuntimeWall
+    {
+        private readonly Camera targetCamera;
+        private readonly GameObject root;
+        private readonly MeshFilter meshFilter;
+        private readonly MeshRenderer meshRenderer;
+        private readonly Mesh mesh;
+        private Material faceMaterial;
+        private Material edgeMaterial;
+        private Material sourceMaterial;
+        private static readonly int HoleVerticesProperty = Shader.PropertyToID("_HoleVertices");
+        private static readonly int HoleVertexCountProperty = Shader.PropertyToID("_HoleVertexCount");
+        private static readonly int BaseMapProperty = Shader.PropertyToID("_BaseMap");
+        private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
+        private static readonly int TextureTilingProperty = Shader.PropertyToID("_TextureTiling");
+        private readonly Vector4[] polygonBuffer = new Vector4[MaxOverlayVertices];
+        private readonly List<Vector3> tessVertices = new List<Vector3>(128);
+        private readonly List<int> tessTriangles = new List<int>(256);
+
+        public RuntimeWall(Camera targetCamera, Transform owner)
+        {
+            this.targetCamera = targetCamera;
+
+            root = new GameObject("RuntimeWall3D", typeof(MeshFilter), typeof(MeshRenderer));
+            root.transform.SetParent(targetCamera.transform, false);
+
+            meshFilter = root.GetComponent<MeshFilter>();
+            meshRenderer = root.GetComponent<MeshRenderer>();
+            mesh = new Mesh
+            {
+                name = "RuntimeWall3DMesh",
+            };
+
+            mesh.MarkDynamic();
+            meshFilter.sharedMesh = mesh;
+            meshRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            meshRenderer.receiveShadows = true;
+        }
+
+        public void SetVisible(bool visible)
+        {
+            if (root != null)
+            {
+                root.SetActive(visible);
+            }
+        }
+
+        public void SetTravelOffset(float localZOffset)
+        {
+            root.transform.localPosition = new Vector3(0f, 0f, localZOffset);
+        }
+
+        public void UpdateMesh(IReadOnlyList<Vector2> cutoutPolygon, float frontDepth, float thickness, Color color, Material materialOverride, Texture2D textureOverride, Vector2 textureTiling, float smoothness)
+        {
+            if (cutoutPolygon == null || cutoutPolygon.Count < 3)
+            {
+                mesh.Clear();
+                return;
+            }
+
+            EnsureMaterials(materialOverride, textureOverride, color, textureTiling, smoothness);
+
+            float backDepth = Mathf.Max(frontDepth + 0.001f, frontDepth + thickness);
+
+            // Tessellate wall face: outer rectangle minus inner cutout
+            tessVertices.Clear();
+            tessTriangles.Clear();
+            Tess tess = new Tess();
+            // Outer rectangle (CCW)
+            tess.AddContour(new[] {
+                new ContourVertex { Position = new Vec3(0, 0, 0) },
+                new ContourVertex { Position = new Vec3(1, 0, 0) },
+                new ContourVertex { Position = new Vec3(1, 1, 0) },
+                new ContourVertex { Position = new Vec3(0, 1, 0) },
+            }, ContourOrientation.CounterClockwise);
+            // Inner cutout (CW)
+            var inner = new ContourVertex[cutoutPolygon.Count];
+            for (int i = 0; i < cutoutPolygon.Count; i++)
+                inner[i] = new ContourVertex { Position = new Vec3(cutoutPolygon[i].x, cutoutPolygon[i].y, 0) };
+            tess.AddContour(inner, ContourOrientation.Clockwise);
+            tess.Tessellate(WindingRule.EvenOdd, ElementType.Polygons, 3);
+            // Build mesh for front face
+            for (int i = 0; i < tess.Vertices.Length; i++)
+            {
+                var v = tess.Vertices[i].Position;
+                tessVertices.Add(ViewportToCameraLocalPoint(v.X, v.Y, frontDepth));
+            }
+            for (int i = 0; i < tess.ElementCount; i++)
+            {
+                int a = tess.Elements[i * 3 + 0];
+                int b = tess.Elements[i * 3 + 1];
+                int c = tess.Elements[i * 3 + 2];
+                tessTriangles.Add(a);
+                tessTriangles.Add(b);
+                tessTriangles.Add(c);
+            }
+            // Back face: same tessellation, but at backDepth and reversed winding
+            int backBase = tessVertices.Count;
+            for (int i = 0; i < tess.Vertices.Length; i++)
+            {
+                var v = tess.Vertices[i].Position;
+                tessVertices.Add(ViewportToCameraLocalPoint(v.X, v.Y, backDepth));
+            }
+            for (int i = 0; i < tess.ElementCount; i++)
+            {
+                int a = tess.Elements[i * 3 + 0] + backBase;
+                int b = tess.Elements[i * 3 + 1] + backBase;
+                int c = tess.Elements[i * 3 + 2] + backBase;
+                // Reverse winding for back face
+                tessTriangles.Add(a);
+                tessTriangles.Add(c);
+                tessTriangles.Add(b);
+            }
+            // Side walls (extrude cutout)
+            List<Vector3> vertices = new List<Vector3>(tessVertices);
+            List<int> faceTriangles = new List<int>(tessTriangles);
+            List<Vector2> uvs = new List<Vector2>(vertices.Count);
+            for (int i = 0; i < vertices.Count; i++)
+                uvs.Add(new Vector2(0, 0)); // Optionally map UVs
+            List<int> edgeTriangles = new List<int>(cutoutPolygon.Count * 6);
+            for (int i = 0; i < cutoutPolygon.Count; i++)
+            {
+                int next = (i + 1) % cutoutPolygon.Count;
+                Vector2 a = cutoutPolygon[i];
+                Vector2 b = cutoutPolygon[next];
+                Vector3 fa = ViewportToCameraLocalPoint(a.x, a.y, frontDepth);
+                Vector3 fb = ViewportToCameraLocalPoint(b.x, b.y, frontDepth);
+                Vector3 ba = ViewportToCameraLocalPoint(a.x, a.y, backDepth);
+                Vector3 bb = ViewportToCameraLocalPoint(b.x, b.y, backDepth);
+                int vStart = vertices.Count;
+                vertices.Add(fa); uvs.Add(new Vector2(0, 0));
+                vertices.Add(fb); uvs.Add(new Vector2(1, 0));
+                vertices.Add(bb); uvs.Add(new Vector2(1, 1));
+                vertices.Add(ba); uvs.Add(new Vector2(0, 1));
+                edgeTriangles.Add(vStart + 0);
+                edgeTriangles.Add(vStart + 1);
+                edgeTriangles.Add(vStart + 2);
+                edgeTriangles.Add(vStart + 0);
+                edgeTriangles.Add(vStart + 2);
+                edgeTriangles.Add(vStart + 3);
+            }
+            mesh.Clear();
+            mesh.SetVertices(vertices);
+            mesh.SetUVs(0, uvs);
+            mesh.subMeshCount = 2;
+            mesh.SetTriangles(faceTriangles, 0);
+            mesh.SetTriangles(edgeTriangles, 1);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+        }
+
+        private void EnsureMaterials(Material materialOverride, Texture2D textureOverride, Color color, Vector2 textureTiling, float smoothness)
+        {
+            if (faceMaterial == null || edgeMaterial == null || sourceMaterial != materialOverride)
+            {
+                sourceMaterial = materialOverride;
+
+                Shader faceShader = Shader.Find("Hidden/PoseGame/WallCutoutFace");
+                Shader edgeShader = materialOverride != null
+                    ? materialOverride.shader
+                    : Shader.Find("Universal Render Pipeline/Lit");
+                if (edgeShader == null)
+                {
+                    edgeShader = Shader.Find("Standard");
+                }
+
+                faceMaterial = new Material(faceShader != null ? faceShader : edgeShader);
+                edgeMaterial = materialOverride != null ? new Material(materialOverride) : new Material(edgeShader);
+                faceMaterial.hideFlags = HideFlags.DontSave;
+                edgeMaterial.hideFlags = HideFlags.DontSave;
+                meshRenderer.sharedMaterials = new[] { faceMaterial, edgeMaterial };
+            }
+
+            if (faceMaterial == null || edgeMaterial == null)
+            {
+                return;
+            }
+
+            ConfigureLitMaterial(edgeMaterial, color, textureOverride, textureTiling, smoothness, alphaClip: false);
+            if (faceMaterial.HasProperty(BaseColorProperty)) faceMaterial.SetColor(BaseColorProperty, color);
+            if (faceMaterial.HasProperty(BaseMapProperty)) faceMaterial.SetTexture(BaseMapProperty, textureOverride);
+            if (faceMaterial.HasProperty(TextureTilingProperty)) faceMaterial.SetVector(TextureTilingProperty, new Vector4(textureTiling.x, textureTiling.y, 0f, 0f));
+        }
+
+        private void ApplyHolePolygon(IReadOnlyList<Vector2> cutoutPolygon)
+        {
+            if (faceMaterial == null)
+            {
+                return;
+            }
+
+            int count = Mathf.Min(MaxOverlayVertices, cutoutPolygon.Count);
+            for (int index = 0; index < polygonBuffer.Length; index++)
+            {
+                polygonBuffer[index] = index < count ? new Vector4(cutoutPolygon[index].x, cutoutPolygon[index].y, 0f, 0f) : Vector4.zero;
+            }
+
+            faceMaterial.SetInt(HoleVertexCountProperty, count);
+            faceMaterial.SetVectorArray(HoleVerticesProperty, polygonBuffer);
+        }
+
+        private static void ConfigureLitMaterial(Material targetMaterial, Color color, Texture texture, Vector2 tiling, float smoothness, bool alphaClip)
+        {
+            if (targetMaterial.HasProperty("_BaseColor")) targetMaterial.SetColor("_BaseColor", color);
+            if (targetMaterial.HasProperty("_Color")) targetMaterial.SetColor("_Color", color);
+            if (targetMaterial.HasProperty("_BaseMap")) targetMaterial.SetTexture("_BaseMap", texture);
+            if (targetMaterial.HasProperty("_MainTex")) targetMaterial.SetTexture("_MainTex", texture);
+            if (texture != null)
+            {
+                if (targetMaterial.HasProperty("_BaseMap")) targetMaterial.SetTextureScale("_BaseMap", tiling);
+                if (targetMaterial.HasProperty("_MainTex")) targetMaterial.SetTextureScale("_MainTex", tiling);
+            }
+
+            if (targetMaterial.HasProperty("_Smoothness")) targetMaterial.SetFloat("_Smoothness", smoothness);
+            if (targetMaterial.HasProperty("_Cull")) targetMaterial.SetFloat("_Cull", 0f);
+            if (targetMaterial.HasProperty("_AlphaClip")) targetMaterial.SetFloat("_AlphaClip", alphaClip ? 1f : 0f);
+            if (targetMaterial.HasProperty("_Cutoff")) targetMaterial.SetFloat("_Cutoff", 0.5f);
+            if (alphaClip)
+            {
+                targetMaterial.EnableKeyword("_ALPHATEST_ON");
+            }
+            else
+            {
+                targetMaterial.DisableKeyword("_ALPHATEST_ON");
+            }
+        }
+
+        private Vector3 ViewportToCameraLocalPoint(float viewportX, float viewportY, float depth)
+        {
+            if (targetCamera.orthographic)
+            {
+                float halfHeight = targetCamera.orthographicSize;
+                float halfWidth = halfHeight * targetCamera.aspect;
+                return new Vector3(
+                    Mathf.Lerp(-halfWidth, halfWidth, viewportX),
+                    Mathf.Lerp(-halfHeight, halfHeight, viewportY),
+                    depth);
+            }
+
+            float halfPerspectiveHeight = Mathf.Tan(targetCamera.fieldOfView * 0.5f * Mathf.Deg2Rad) * depth;
+            float halfPerspectiveWidth = halfPerspectiveHeight * targetCamera.aspect;
+            return new Vector3(
+                Mathf.Lerp(-halfPerspectiveWidth, halfPerspectiveWidth, viewportX),
+                Mathf.Lerp(-halfPerspectiveHeight, halfPerspectiveHeight, viewportY),
+                depth);
+        }
+
+        private static Vector2 ComputeCenter(IReadOnlyList<Vector2> polygon)
+        {
+            Vector2 center = Vector2.zero;
+            for (int index = 0; index < polygon.Count; index++)
+            {
+                center += polygon[index];
+            }
+
+            return center / polygon.Count;
+        }
+
+        private void AddOuterFrameSides(List<Vector3> vertices, List<int> triangles, List<Vector2> uvs, float frontDepth, float backDepth, float textureScale)
+        {
+            Vector2[] frame =
+            {
+                new Vector2(0f, 0f),
+                new Vector2(0f, 1f),
+                new Vector2(1f, 1f),
+                new Vector2(1f, 0f),
+            };
+
+            for (int index = 0; index < frame.Length; index++)
+            {
+                int nextIndex = (index + 1) % frame.Length;
+                Vector3 frontA = ViewportToCameraLocalPoint(frame[index].x, frame[index].y, frontDepth);
+                Vector3 frontB = ViewportToCameraLocalPoint(frame[nextIndex].x, frame[nextIndex].y, frontDepth);
+                Vector3 backA = ViewportToCameraLocalPoint(frame[index].x, frame[index].y, backDepth);
+                Vector3 backB = ViewportToCameraLocalPoint(frame[nextIndex].x, frame[nextIndex].y, backDepth);
+                AddEdgeQuad(vertices, triangles, uvs, frontB, frontA, backA, backB, textureScale);
+            }
+        }
+
+        private static void AddSubmeshQuad(List<Vector3> vertices, List<int> triangles, List<Vector2> uvs, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Vector2 uvA, Vector2 uvB, Vector2 uvC, Vector2 uvD)
+        {
+            int startIndex = vertices.Count;
+            vertices.Add(a);
+            vertices.Add(b);
+            vertices.Add(c);
+            vertices.Add(d);
+            uvs.Add(uvA);
+            uvs.Add(uvB);
+            uvs.Add(uvC);
+            uvs.Add(uvD);
+
+            triangles.Add(startIndex);
+            triangles.Add(startIndex + 1);
+            triangles.Add(startIndex + 2);
+            triangles.Add(startIndex);
+            triangles.Add(startIndex + 2);
+            triangles.Add(startIndex + 3);
+        }
+
+        private static void AddEdgeQuad(List<Vector3> vertices, List<int> triangles, List<Vector2> uvs, Vector3 a, Vector3 b, Vector3 c, Vector3 d, float textureScale)
+        {
+            int startIndex = vertices.Count;
+            float edgeLength = Vector3.Distance(a, b) * textureScale;
+            float depthLength = Vector3.Distance(b, c) * textureScale;
+
+            vertices.Add(a);
+            vertices.Add(b);
+            vertices.Add(c);
+            vertices.Add(d);
+
+            uvs.Add(new Vector2(0f, 0f));
+            uvs.Add(new Vector2(edgeLength, 0f));
+            uvs.Add(new Vector2(edgeLength, depthLength));
+            uvs.Add(new Vector2(0f, depthLength));
+
+            triangles.Add(startIndex);
+            triangles.Add(startIndex + 1);
+            triangles.Add(startIndex + 2);
+            triangles.Add(startIndex);
+            triangles.Add(startIndex + 2);
+            triangles.Add(startIndex + 3);
+        }
+    }
+
     private sealed class WallShapeData
     {
-        public WallShapeData(string name, Rect bounds, float shrinkDuration, Vector2[] polygonVertices)
+        public WallShapeData(string name, Rect bounds, float shrinkDuration, Vector2[] polygonVertices, WallOrbTargetData[] orbTargets, bool hasReferenceAvatarBounds, Rect referenceAvatarViewportBounds)
         {
             Name = name;
             Bounds = bounds;
             ShrinkDuration = shrinkDuration;
             PolygonVertices = polygonVertices;
+            OrbTargets = orbTargets ?? Array.Empty<WallOrbTargetData>();
+            HasReferenceAvatarBounds = hasReferenceAvatarBounds;
+            ReferenceAvatarViewportBounds = referenceAvatarViewportBounds;
         }
 
         public string Name { get; }
         public Rect Bounds { get; }
         public float ShrinkDuration { get; }
         public Vector2[] PolygonVertices { get; }
+        public WallOrbTargetData[] OrbTargets { get; }
+        public bool HasReferenceAvatarBounds { get; }
+        public Rect ReferenceAvatarViewportBounds { get; }
         public bool IsPolygon => PolygonVertices != null && PolygonVertices.Length >= 3;
     }
 
@@ -793,12 +1466,14 @@ public class ScreenWallFitController : MonoBehaviour
 
         private readonly RawImage polygonOverlay;
         private readonly Image flash;
+        private readonly List<Image> orbIndicators = new List<Image>(8);
         private readonly Material overlayMaterial;
         private readonly Vector4[] animatedPolygonBuffer = new Vector4[MaxOverlayVertices];
         private readonly Vector4[] outlinePolygonBuffer = new Vector4[MaxOverlayVertices];
         private readonly Texture2D fallbackOverlayTexture;
         private readonly Color[] fallbackOverlayPixels = new Color[FallbackOverlayTextureWidth * FallbackOverlayTextureHeight];
         private readonly bool useShader;
+        private bool isVisible = true;
 
         public RuntimeOverlay(RectTransform parent)
         {
@@ -884,8 +1559,49 @@ public class ScreenWallFitController : MonoBehaviour
 
         public void SetVisible(bool visible)
         {
+            isVisible = visible;
             polygonOverlay.enabled = visible;
             flash.enabled = visible;
+            for (int index = 0; index < orbIndicators.Count; index++)
+            {
+                orbIndicators[index].gameObject.SetActive(visible);
+            }
+        }
+
+        public void SetOrbTargets(IReadOnlyList<WallOrbTargetData> orbTargets, IReadOnlyList<bool> hitStates, Color inactiveColor, Color activeColor, float radiusMultiplier)
+        {
+            EnsureOrbIndicatorCount(orbTargets == null ? 0 : orbTargets.Count);
+
+            RectTransform parentRect = polygonOverlay.rectTransform.parent as RectTransform;
+            if (parentRect == null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < orbIndicators.Count; index++)
+            {
+                Image orbIndicator = orbIndicators[index];
+                bool isVisible = orbTargets != null && index < orbTargets.Count;
+                orbIndicator.gameObject.SetActive(this.isVisible);
+                orbIndicator.enabled = this.isVisible && isVisible;
+                if (!isVisible)
+                {
+                    continue;
+                }
+
+                WallOrbTargetData orbTarget = orbTargets[index];
+                RectTransform rectTransform = orbIndicator.rectTransform;
+                rectTransform.anchorMin = orbTarget.viewportPosition;
+                rectTransform.anchorMax = orbTarget.viewportPosition;
+                rectTransform.pivot = new Vector2(0.5f, 0.5f);
+                rectTransform.anchoredPosition = Vector2.zero;
+                rectTransform.sizeDelta = new Vector2(
+                    orbTarget.radius * radiusMultiplier * 2f * parentRect.rect.width,
+                    orbTarget.radius * radiusMultiplier * 2f * parentRect.rect.height);
+
+                bool isHit = hitStates != null && index < hitStates.Count && hitStates[index];
+                orbIndicator.color = isHit ? activeColor : inactiveColor;
+            }
         }
 
         private void ApplyPolygon(string verticesProperty, string countProperty, IReadOnlyList<Vector2> polygon, Vector4[] buffer)
@@ -942,6 +1658,18 @@ public class ScreenWallFitController : MonoBehaviour
             rectTransform.anchorMax = Vector2.one;
             rectTransform.offsetMin = Vector2.zero;
             rectTransform.offsetMax = Vector2.zero;
+        }
+
+        private void EnsureOrbIndicatorCount(int targetCount)
+        {
+            while (orbIndicators.Count < targetCount)
+            {
+                Image indicator = CreateImage(polygonOverlay.rectTransform.parent as RectTransform, $"OrbIndicator_{orbIndicators.Count}");
+                indicator.sprite = Resources.GetBuiltinResource<Sprite>("UI/Skin/Knob.psd");
+                indicator.type = Image.Type.Simple;
+                indicator.raycastTarget = false;
+                orbIndicators.Add(indicator);
+            }
         }
     }
 }

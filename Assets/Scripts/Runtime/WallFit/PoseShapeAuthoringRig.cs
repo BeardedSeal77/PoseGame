@@ -6,6 +6,15 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class PoseShapeAuthoringRig : MonoBehaviour
 {
+    [Serializable]
+    private struct BoneLocalPose
+    {
+        public string relativePath;
+        public Vector3 localPosition;
+        public Quaternion localRotation;
+        public Vector3 localScale;
+    }
+
     public enum JointHandleId
     {
         Hips,
@@ -20,6 +29,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
     [SerializeField] private Animator targetAnimator;
     [SerializeField] private Camera authoringCamera;
     [SerializeField] private PolygonWallShapeAsset shapeAsset;
+    [SerializeField, HideInInspector] private Animator referencePoseAnimator;
 
     [Header("Authoring")]
     [SerializeField] private bool autoSolveInEditMode = true;
@@ -35,6 +45,8 @@ public class PoseShapeAuthoringRig : MonoBehaviour
     [SerializeField] private Transform rightHandTarget;
     [SerializeField] private Transform leftFootTarget;
     [SerializeField] private Transform rightFootTarget;
+    [SerializeField, HideInInspector] private List<BoneLocalPose> importedBoneLocalPoses = new List<BoneLocalPose>();
+    [SerializeField] private List<WallOrbTargetData> orbTargets = new List<WallOrbTargetData>();
 
     [SerializeField] private List<Vector2> polygonVertices = new List<Vector2>
     {
@@ -48,6 +60,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
     public Camera AuthoringCamera => authoringCamera;
     public PolygonWallShapeAsset ShapeAsset => shapeAsset;
     public IReadOnlyList<Vector2> PolygonVertices => polygonVertices;
+    public IReadOnlyList<WallOrbTargetData> OrbTargets => orbTargets;
     public float ShrinkDuration => shrinkDuration;
     public float SilhouettePadding => silhouettePadding;
     public float JointHandleVisualOffset => jointHandleVisualOffset;
@@ -83,6 +96,11 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         shapeAsset = asset;
     }
 
+    public void AssignReferencePoseAnimator(Animator animator)
+    {
+        referencePoseAnimator = animator;
+    }
+
     public void LoadFromShapeAsset()
     {
         if (shapeAsset == null)
@@ -97,6 +115,16 @@ public class PoseShapeAuthoringRig : MonoBehaviour
             polygonVertices.Add(ClampViewportPoint(sourceVertices[index]));
         }
 
+        orbTargets.Clear();
+        IReadOnlyList<WallOrbTargetData> sourceOrbTargets = shapeAsset.OrbTargets;
+        for (int index = 0; index < sourceOrbTargets.Count; index++)
+        {
+            WallOrbTargetData orbTarget = sourceOrbTargets[index];
+            orbTarget.viewportPosition = ClampViewportPoint(orbTarget.viewportPosition);
+            orbTarget.radius = Mathf.Clamp(orbTarget.radius, 0.01f, 0.2f);
+            orbTargets.Add(orbTarget);
+        }
+
         shrinkDuration = shapeAsset.ShrinkDuration;
         EnsureMinimumVertexCount();
     }
@@ -108,7 +136,8 @@ public class PoseShapeAuthoringRig : MonoBehaviour
             return;
         }
 
-        shapeAsset.SetData(polygonVertices, shrinkDuration);
+        Rect? referenceBounds = TryGetAvatarViewportBounds(out Rect viewportBounds) ? viewportBounds : null;
+        shapeAsset.SetData(polygonVertices, shrinkDuration, orbTargets, referenceBounds);
     }
 
     public void EnsureTargetHandlesCreated()
@@ -143,30 +172,64 @@ public class PoseShapeAuthoringRig : MonoBehaviour
 
     public void ResetPoseToTPose()
     {
+        ResetPoseToImportedPose();
+    }
+
+    public void CaptureImportedPose()
+    {
+        importedBoneLocalPoses.Clear();
+
+        Animator sourceAnimator = referencePoseAnimator != null ? referencePoseAnimator : targetAnimator;
+        if (sourceAnimator == null)
+        {
+            return;
+        }
+
+        Transform sourceRoot = sourceAnimator.transform;
+        Transform[] bones = sourceRoot.GetComponentsInChildren<Transform>(true);
+        for (int index = 0; index < bones.Length; index++)
+        {
+            Transform bone = bones[index];
+            importedBoneLocalPoses.Add(new BoneLocalPose
+            {
+                relativePath = GetRelativePath(sourceRoot, bone),
+                localPosition = bone.localPosition,
+                localRotation = bone.localRotation,
+                localScale = bone.localScale,
+            });
+        }
+    }
+
+    public void ResetPoseToImportedPose()
+    {
         if (targetAnimator == null || !targetAnimator.isHuman)
         {
             return;
         }
 
-        HumanPoseHandler poseHandler = new HumanPoseHandler(targetAnimator.avatar, targetAnimator.transform);
-        HumanPose humanPose = new HumanPose();
-        poseHandler.GetHumanPose(ref humanPose);
-
-        humanPose.bodyPosition = Vector3.zero;
-        humanPose.bodyRotation = Quaternion.identity;
-        if (humanPose.muscles != null)
+        if (importedBoneLocalPoses == null || importedBoneLocalPoses.Count == 0)
         {
-            for (int index = 0; index < humanPose.muscles.Length; index++)
-            {
-                humanPose.muscles[index] = 0f;
-            }
+            CaptureImportedPose();
         }
 
-        poseHandler.SetHumanPose(ref humanPose);
+        for (int index = 0; index < importedBoneLocalPoses.Count; index++)
+        {
+            BoneLocalPose pose = importedBoneLocalPoses[index];
+            Transform bone = FindRelativeTransform(targetAnimator.transform, pose.relativePath);
+            if (bone == null)
+            {
+                continue;
+            }
+
+            bone.localPosition = pose.localPosition;
+            bone.localRotation = pose.localRotation;
+            bone.localScale = pose.localScale;
+        }
 
         if (TryGetPlayerRoot(out Transform playerRoot))
         {
-            playerRoot.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            Vector3 localEuler = playerRoot.localEulerAngles;
+            playerRoot.localRotation = Quaternion.Euler(localEuler.x, 180f, localEuler.z);
         }
 
         ResetTargetsFromCurrentPose();
@@ -257,6 +320,79 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         return true;
     }
 
+    public bool TryGetOrbWorldPosition(int index, out Vector3 worldPosition)
+    {
+        worldPosition = default;
+        if (index < 0 || index >= orbTargets.Count)
+        {
+            return false;
+        }
+
+        return TryViewportToWorld(orbTargets[index].viewportPosition, out worldPosition);
+    }
+
+    public float GetOrbWorldRadius(int index)
+    {
+        if (authoringCamera == null || index < 0 || index >= orbTargets.Count)
+        {
+            return 0.05f;
+        }
+
+        WallOrbTargetData orbTarget = orbTargets[index];
+        if (!TryViewportToWorld(orbTarget.viewportPosition, out Vector3 centerWorld) ||
+            !TryViewportToWorld(ClampViewportPoint(orbTarget.viewportPosition + new Vector2(orbTarget.radius, 0f)), out Vector3 edgeWorld))
+        {
+            return 0.05f;
+        }
+
+        return Mathf.Max(0.02f, Vector3.Distance(centerWorld, edgeWorld));
+    }
+
+    public int AddOrbTarget(Vector2 viewportPoint, float radius = 0.05f)
+    {
+        orbTargets.Add(new WallOrbTargetData(ClampViewportPoint(viewportPoint), Mathf.Clamp(radius, 0.01f, 0.2f)));
+        return orbTargets.Count - 1;
+    }
+
+    public void SetOrbTargetPosition(int index, Vector2 viewportPoint)
+    {
+        if (index < 0 || index >= orbTargets.Count)
+        {
+            return;
+        }
+
+        WallOrbTargetData orbTarget = orbTargets[index];
+        orbTarget.viewportPosition = ClampViewportPoint(viewportPoint);
+        orbTargets[index] = orbTarget;
+    }
+
+    public void SetOrbTargetRadius(int index, float radius)
+    {
+        if (index < 0 || index >= orbTargets.Count)
+        {
+            return;
+        }
+
+        WallOrbTargetData orbTarget = orbTargets[index];
+        orbTarget.radius = Mathf.Clamp(radius, 0.01f, 0.2f);
+        orbTargets[index] = orbTarget;
+    }
+
+    public void ClearOrbTargets()
+    {
+        orbTargets.Clear();
+    }
+
+    public void RemoveOrbTargetAt(int index)
+    {
+        if (index < 0 || index >= orbTargets.Count)
+        {
+            return;
+        }
+
+        orbTargets.RemoveAt(index);
+    }
+
     public bool TryWorldToViewport(Vector3 worldPoint, out Vector2 viewportPoint)
     {
         if (authoringCamera == null)
@@ -342,15 +478,14 @@ public class PoseShapeAuthoringRig : MonoBehaviour
             case JointHandleId.Hips:
                 if (hipsTarget != null)
                 {
-                    Vector3 projectedPosition = ProjectOntoAuthoringPlane(targetWorldPosition);
-                    Vector3 delta = projectedPosition - hipsTarget.position;
+                    Vector3 delta = targetWorldPosition - hipsTarget.position;
                     ApplyTargetDelta(delta);
                 }
                 break;
             case JointHandleId.Chest:
                 if (chestTarget != null)
                 {
-                    chestTarget.position = ProjectOntoAuthoringPlane(targetWorldPosition);
+                    chestTarget.position = targetWorldPosition;
                 }
                 break;
             case JointHandleId.LeftHand:
@@ -416,6 +551,19 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         jointHandleVisualOffset = Mathf.Max(0f, jointHandleVisualOffset);
         ikIterations = Mathf.Max(1, ikIterations);
         EnsureMinimumVertexCount();
+
+        if (orbTargets == null)
+        {
+            orbTargets = new List<WallOrbTargetData>();
+        }
+
+        for (int index = 0; index < orbTargets.Count; index++)
+        {
+            WallOrbTargetData orbTarget = orbTargets[index];
+            orbTarget.viewportPosition = ClampViewportPoint(orbTarget.viewportPosition);
+            orbTarget.radius = Mathf.Clamp(orbTarget.radius, 0.01f, 0.2f);
+            orbTargets[index] = orbTarget;
+        }
     }
 
     private void EnsureMinimumVertexCount()
@@ -718,6 +866,14 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         Vector2 rightShoulder = GetViewportPointOrFallback(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm);
         Vector2 leftElbow = GetViewportPointOrFallback(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand);
         Vector2 rightElbow = GetViewportPointOrFallback(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand);
+        Vector2 leftHip = GetViewportPointOrFallback(HumanBodyBones.LeftUpperLeg, HumanBodyBones.Hips);
+        Vector2 rightHip = GetViewportPointOrFallback(HumanBodyBones.RightUpperLeg, HumanBodyBones.Hips);
+
+        OrderByScreenX(ref leftShoulder, ref rightShoulder);
+        OrderByScreenX(ref leftElbow, ref rightElbow);
+        OrderByScreenX(ref leftHand, ref rightHand);
+        OrderByScreenX(ref leftHip, ref rightHip);
+        OrderByScreenX(ref leftFoot, ref rightFoot);
 
         float shoulderWidth = Mathf.Max(0.08f, Mathf.Abs(rightShoulder.x - leftShoulder.x));
         float sidePadding = Mathf.Max(silhouettePadding, shoulderWidth * 0.18f);
@@ -733,24 +889,28 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         float shoulderY = Mathf.Max((leftShoulder.y + rightShoulder.y) * 0.5f + shoulderLift, hips.y + (silhouettePadding * 2f));
         float headY = Mathf.Max(head.y + headLift, shoulderY + (silhouettePadding * 1.5f));
         float hipY = Mathf.Min(hips.y - (sidePadding * 0.15f), shoulderY - (silhouettePadding * 2f));
+        float leftHipX = Mathf.Min(leftHip.x, hips.x - hipOut);
+        float rightHipX = Mathf.Max(rightHip.x, hips.x + hipOut);
+        float leftShoulderX = Mathf.Min(leftShoulder.x, head.x - (headHalfWidth * 0.85f)) - sidePadding;
+        float rightShoulderX = Mathf.Max(rightShoulder.x, head.x + (headHalfWidth * 0.85f)) + sidePadding;
 
         outline = new List<Vector2>
         {
             ClampViewportPoint(leftFoot + new Vector2(-footOut, -footDrop)),
-            ClampViewportPoint(new Vector2(hips.x - hipOut, hipY)),
+            ClampViewportPoint(new Vector2(leftHipX, hipY)),
             ClampViewportPoint(leftElbow + new Vector2(-elbowOut, -handDrop * 0.35f)),
             ClampViewportPoint(leftHand + new Vector2(-handOut * 0.82f, -handDrop)),
             ClampViewportPoint(leftHand + new Vector2(-handOut, 0f)),
             ClampViewportPoint(leftElbow + new Vector2(-elbowOut, handDrop * 0.35f)),
-            ClampViewportPoint(new Vector2(leftShoulder.x - sidePadding, shoulderY)),
+            ClampViewportPoint(new Vector2(leftShoulderX, shoulderY)),
             ClampViewportPoint(new Vector2(head.x - headHalfWidth, headY)),
             ClampViewportPoint(new Vector2(head.x + headHalfWidth, headY)),
-            ClampViewportPoint(new Vector2(rightShoulder.x + sidePadding, shoulderY)),
+            ClampViewportPoint(new Vector2(rightShoulderX, shoulderY)),
             ClampViewportPoint(rightElbow + new Vector2(elbowOut, handDrop * 0.35f)),
             ClampViewportPoint(rightHand + new Vector2(handOut, 0f)),
             ClampViewportPoint(rightHand + new Vector2(handOut * 0.82f, -handDrop)),
             ClampViewportPoint(rightElbow + new Vector2(elbowOut, -handDrop * 0.35f)),
-            ClampViewportPoint(new Vector2(hips.x + hipOut, hipY)),
+            ClampViewportPoint(new Vector2(rightHipX, hipY)),
             ClampViewportPoint(rightFoot + new Vector2(footOut, -footDrop)),
         };
 
@@ -910,7 +1070,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         float lowerLength = Vector3.Distance(lowerBone.position, endBone.position);
         float maxReach = Mathf.Max(0.001f, upperLength + lowerLength - 0.0001f);
 
-        Vector3 constrainedPosition = ProjectOntoAuthoringPlane(desiredWorldPosition);
+        Vector3 constrainedPosition = desiredWorldPosition;
         Vector3 toDesired = constrainedPosition - rootPosition;
         if (toDesired.magnitude > maxReach)
         {
@@ -920,11 +1080,55 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         target.position = constrainedPosition;
     }
 
+    private static void OrderByScreenX(ref Vector2 a, ref Vector2 b)
+    {
+        if (a.x <= b.x)
+        {
+            return;
+        }
+
+        (a, b) = (b, a);
+    }
+
     private static Vector2 ClampViewportPoint(Vector2 point)
     {
         return new Vector2(
             Mathf.Clamp01(point.x),
             Mathf.Clamp01(point.y));
+    }
+
+    private static string GetRelativePath(Transform root, Transform current)
+    {
+        if (root == current)
+        {
+            return string.Empty;
+        }
+
+        List<string> pathParts = new List<string>(8);
+        Transform cursor = current;
+        while (cursor != null && cursor != root)
+        {
+            pathParts.Add(cursor.name);
+            cursor = cursor.parent;
+        }
+
+        pathParts.Reverse();
+        return string.Join("/", pathParts);
+    }
+
+    private static Transform FindRelativeTransform(Transform root, string relativePath)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return root;
+        }
+
+        return root.Find(relativePath);
     }
 
     private static float NormalizeAngle(float angleDegrees)

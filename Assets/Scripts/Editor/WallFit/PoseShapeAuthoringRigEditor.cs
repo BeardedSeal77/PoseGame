@@ -24,6 +24,7 @@ public class PoseShapeAuthoringRigEditor : Editor
     private float rotateStartMouseX;
     private float rotateStartYaw;
     private PoseShapeAuthoringRig.JointHandleId selectedJointHandle = PoseShapeAuthoringRig.JointHandleId.LeftHand;
+    private int selectedOrbIndex = -1;
 
     private void OnDisable()
     {
@@ -71,6 +72,7 @@ public class PoseShapeAuthoringRigEditor : Editor
 
         DrawPolygon(rig);
         DrawJointHandles(rig);
+        DrawOrbHandles(rig);
         DrawSelectionMarquee();
     }
 
@@ -148,6 +150,42 @@ public class PoseShapeAuthoringRigEditor : Editor
         DrawJointHandle(rig, PoseShapeAuthoringRig.JointHandleId.RightHand, new Color(0.25f, 1f, 0.35f, 1f));
         DrawJointHandle(rig, PoseShapeAuthoringRig.JointHandleId.LeftFoot, new Color(1f, 0.55f, 0.25f, 1f));
         DrawJointHandle(rig, PoseShapeAuthoringRig.JointHandleId.RightFoot, new Color(1f, 0.55f, 0.25f, 1f));
+    }
+
+    private void DrawOrbHandles(PoseShapeAuthoringRig rig)
+    {
+        for (int index = 0; index < rig.OrbTargets.Count; index++)
+        {
+            if (!rig.TryGetOrbWorldPosition(index, out Vector3 worldPosition))
+            {
+                continue;
+            }
+
+            float worldRadius = rig.GetOrbWorldRadius(index);
+            float handleSize = HandleUtility.GetHandleSize(worldPosition) * 0.08f;
+
+            Handles.zTest = CompareFunction.Always;
+            Handles.color = index == selectedOrbIndex ? new Color(0.35f, 1f, 0.95f, 1f) : new Color(0.35f, 0.8f, 1f, 0.95f);
+            Handles.DrawWireDisc(worldPosition, rig.AuthoringCamera.transform.forward, worldRadius, 2f);
+
+            if (Handles.Button(worldPosition, Quaternion.identity, handleSize, handleSize, Handles.CircleHandleCap))
+            {
+                selectedOrbIndex = index;
+                Repaint();
+            }
+
+            EditorGUI.BeginChangeCheck();
+            Vector3 movedPosition = Handles.FreeMoveHandle(worldPosition, handleSize * 0.9f, Vector3.zero, Handles.CircleHandleCap);
+            if (EditorGUI.EndChangeCheck() && rig.TryWorldToViewport(movedPosition, out Vector2 viewportPoint))
+            {
+                Undo.RecordObject(rig, "Move Orb Target");
+                rig.SetOrbTargetPosition(index, viewportPoint);
+                selectedOrbIndex = index;
+                EditorUtility.SetDirty(rig);
+            }
+
+            Handles.Label(worldPosition + (Vector3.up * handleSize * 0.75f), $"Orb {index + 1}");
+        }
     }
 
     private void DrawJointHandle(PoseShapeAuthoringRig rig, PoseShapeAuthoringRig.JointHandleId jointHandleId, Color color)
@@ -506,13 +544,14 @@ public class PoseShapeAuthoringRigEditor : Editor
 
     private void DrawActionButtons(PoseShapeAuthoringRig rig)
     {
-        using (new EditorGUILayout.HorizontalScope())
+        EditorGUILayout.BeginHorizontal();
+        try
         {
             if (GUILayout.Button("Reset Pose", EditorStyles.miniButtonLeft))
             {
-                Undo.RegisterFullObjectHierarchyUndo(rig.gameObject, "Reset Pose To T-Pose");
+                Undo.RegisterFullObjectHierarchyUndo(rig.gameObject, "Reset Pose To Imported Pose");
                 rig.EnsureTargetHandlesCreated();
-                rig.ResetPoseToTPose();
+                rig.ResetPoseToImportedPose();
                 EditorUtility.SetDirty(rig);
                 SceneView.RepaintAll();
             }
@@ -535,8 +574,13 @@ public class PoseShapeAuthoringRigEditor : Editor
                 SceneView.RepaintAll();
             }
         }
+        finally
+        {
+            EditorGUILayout.EndHorizontal();
+        }
 
-        using (new EditorGUILayout.HorizontalScope())
+        EditorGUILayout.BeginHorizontal();
+        try
         {
             if (GUILayout.Button("Save Shape", EditorStyles.miniButtonLeft))
             {
@@ -547,6 +591,38 @@ public class PoseShapeAuthoringRigEditor : Editor
             {
                 LoadShapeFromFolder(rig);
             }
+        }
+        finally
+        {
+            EditorGUILayout.EndHorizontal();
+        }
+
+        EditorGUILayout.BeginHorizontal();
+        try
+        {
+            if (GUILayout.Button("Add Orb", EditorStyles.miniButtonLeft))
+            {
+                Undo.RecordObject(rig, "Add Orb Target");
+                selectedOrbIndex = rig.AddOrbTarget(new Vector2(0.5f, 0.5f));
+                EditorUtility.SetDirty(rig);
+                SceneView.RepaintAll();
+            }
+
+            using (new EditorGUI.DisabledScope(rig.OrbTargets.Count == 0))
+            {
+                if (GUILayout.Button("Clear Orbs", EditorStyles.miniButtonRight))
+                {
+                    Undo.RecordObject(rig, "Clear Orb Targets");
+                    rig.ClearOrbTargets();
+                    selectedOrbIndex = -1;
+                    EditorUtility.SetDirty(rig);
+                    SceneView.RepaintAll();
+                }
+            }
+        }
+        finally
+        {
+            EditorGUILayout.EndHorizontal();
         }
     }
 

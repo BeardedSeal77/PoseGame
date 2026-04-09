@@ -370,6 +370,18 @@ public class HumanoidPoseDriver : MonoBehaviour
             return false;
         }
 
+        // Only trust the 3D cross-product method if there is meaningful depth
+        // variation. 2D webcam sources produce near-zero or noisy Z values which
+        // make the cross product unreliable — fall through to the 2D shoulder-
+        // width compression fallback instead.
+        float shoulderSpanXY = new Vector2(rightShoulder.x - leftShoulder.x, rightShoulder.y - leftShoulder.y).magnitude;
+        float depthSpread = Mathf.Abs(rightShoulder.z - leftShoulder.z) +
+                            Mathf.Abs(((leftShoulder.z + rightShoulder.z) * 0.5f) - hipCenter.z);
+        if (shoulderSpanXY > 0.001f && depthSpread / shoulderSpanXY < 0.05f)
+        {
+            return false;
+        }
+
         Vector3 shoulderCenter = (leftShoulder + rightShoulder) * 0.5f;
         Vector3 across = rightShoulder - leftShoulder;
         Vector3 up = shoulderCenter - hipCenter;

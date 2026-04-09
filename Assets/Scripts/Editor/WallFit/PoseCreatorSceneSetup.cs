@@ -46,16 +46,41 @@ public static class PoseCreatorSceneSetup
             ? (GameObject)PrefabUtility.InstantiatePrefab(sourcePrefab, scene)
             : Object.Instantiate(source);
 
+        GameObject referenceInstance = sourcePrefab != null
+            ? (GameObject)PrefabUtility.InstantiatePrefab(sourcePrefab, scene)
+            : Object.Instantiate(source);
+
         playerInstance.name = "PoseCreatorPlayer";
         playerInstance.transform.SetParent(playerRoot.transform, false);
         playerInstance.transform.localPosition = Vector3.zero;
         playerInstance.transform.localRotation = Quaternion.identity;
         playerInstance.transform.localScale = Vector3.one;
 
+        referenceInstance.name = "PoseCreatorReferencePose";
+        referenceInstance.transform.SetParent(rigObject.transform, false);
+        referenceInstance.transform.localPosition = Vector3.zero;
+        referenceInstance.transform.localRotation = Quaternion.identity;
+        referenceInstance.transform.localScale = Vector3.one;
+        referenceInstance.SetActive(false);
+        referenceInstance.hideFlags = HideFlags.HideInHierarchy | HideFlags.NotEditable;
+
         Animator animator = playerInstance.GetComponentInChildren<Animator>();
+        Animator referenceAnimator = referenceInstance.GetComponentInChildren<Animator>();
         if (animator == null || !animator.isHuman)
         {
             Object.DestroyImmediate(playerInstance);
+            Object.DestroyImmediate(referenceInstance);
+            EditorUtility.DisplayDialog(
+                "Humanoid Animator Required",
+                "The selected object must contain a Humanoid Animator.",
+                "OK");
+            return;
+        }
+
+        if (referenceAnimator == null || !referenceAnimator.isHuman)
+        {
+            Object.DestroyImmediate(playerInstance);
+            Object.DestroyImmediate(referenceInstance);
             EditorUtility.DisplayDialog(
                 "Humanoid Animator Required",
                 "The selected object must contain a Humanoid Animator.",
@@ -70,10 +95,12 @@ public static class PoseCreatorSceneSetup
         SerializedObject rigSerializedObject = new SerializedObject(rig);
         rigSerializedObject.FindProperty("targetAnimator").objectReferenceValue = animator;
         rigSerializedObject.FindProperty("authoringCamera").objectReferenceValue = camera;
+        rigSerializedObject.FindProperty("referencePoseAnimator").objectReferenceValue = referenceAnimator;
         rigSerializedObject.ApplyModifiedPropertiesWithoutUndo();
 
         rig.EnsureTargetHandlesCreated();
-        rig.ResetPoseToTPose();
+        rig.CaptureImportedPose();
+        rig.ResetPoseToImportedPose();
         rig.ResetShapeToRectangle();
         DisableScenePicking(playerInstance, camera.gameObject, keyLight, fillLight, backdrop);
         HideComponentIcons();
@@ -135,6 +162,7 @@ public static class PoseCreatorSceneSetup
         cameraObject.tag = "MainCamera";
 
         Camera camera = cameraObject.AddComponent<Camera>();
+        cameraObject.AddComponent<FixedAspectCamera>();
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.11f, 0.14f, 0.18f);
         camera.nearClipPlane = 0.1f;
