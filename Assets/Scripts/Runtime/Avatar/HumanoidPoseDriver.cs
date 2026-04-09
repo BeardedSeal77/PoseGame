@@ -1,25 +1,62 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 public class HumanoidPoseDriver : MonoBehaviour
 {
+    [Header("References")]
     [SerializeField] private PoseSourceBase poseSource;
     [SerializeField] private Animator animator;
     [SerializeField] private Transform avatarRoot;
+
+    [Header("Pose Input")]
     [SerializeField] private bool mirrorX;
     [SerializeField] private bool swapLeftRight;
     [SerializeField, Range(0.01f, 1f)] private float minimumConfidenceOverride = 0.5f;
     [SerializeField, Min(1f)] private float rotationResponsiveness = 12f;
+
+    [Header("Root Rotation")]
     [SerializeField] private bool driveRootYaw = true;
     [SerializeField] private bool invertRootYaw;
+    [SerializeField, Range(-180f, 180f)] private float rootFacingOffsetDegrees = 180f;
     [SerializeField, Min(1f)] private float rootYawResponsiveness = 8f;
     [SerializeField, Range(0f, 85f)] private float maxRootYawDegrees = 70f;
+
+    [Header("Root Translation")]
+    [SerializeField] private bool driveRootPosition = true;
+    [SerializeField] private bool driveRootHeight;
+    [SerializeField, Min(1f)] private float rootPositionResponsiveness = 8f;
+    [Tooltip("Scales Kinect hip movement into avatar root movement on X/Y/Z.")]
+    [SerializeField] private Vector3 rootPositionScale = new Vector3(1f, 1f, -1f);
+    [Tooltip("Keeps the avatar root from sinking below an ankle-based floor estimate.")]
+    [SerializeField] private bool keepFeetGrounded = true;
+    [SerializeField, Min(0f)] private float maxFootHeightOffset = 0.2f;
+
+    [Header("Local Body Motion")]
     [SerializeField] private bool driveHipHeight = true;
     [SerializeField, Min(0.01f)] private float maxHipDrop = 0.2f;
     [SerializeField, Min(1f)] private float hipHeightResponsiveness = 10f;
-    [SerializeField] private bool driveHandBones;
+
+    [Header("Bone Rotation")]
+    [FormerlySerializedAs("driveHandBones")]
+    [Tooltip("Drives the lower-arm chain from elbow to wrist. Disable only if wrist tracking is too noisy.")]
+    [SerializeField] private bool driveLowerArmBones = true;
+    [SerializeField] private bool invertArmDirections;
+    [SerializeField] private bool invertLegDirections;
+    [SerializeField] private bool invertHeadDirection;
+    [SerializeField] private Vector3 armRotationOffsetEuler;
+    [SerializeField] private Vector3 legRotationOffsetEuler = new Vector3(0f, 180f, 0f);
+    [SerializeField] private Vector3 headRotationOffsetEuler = new Vector3(0f, 180f, 0f);
+    [Tooltip("Optional Kinect hand rotation layer. Disable this to fall back to the current forearm-only behavior.")]
+    [SerializeField] private bool driveHandRotations;
+    [SerializeField] private bool invertLeftHandAimDirection;
+    [SerializeField] private bool invertRightHandAimDirection;
+    [SerializeField] private bool invertLeftHandRoll;
+    [SerializeField] private bool invertRightHandRoll;
+    [SerializeField] private Vector3 leftHandRotationOffsetEuler;
+    [SerializeField] private Vector3 rightHandRotationOffsetEuler;
 
     private readonly PoseFrame workingFrame = new PoseFrame();
     private readonly Dictionary<PoseJointId, Vector3> rawJoints = new Dictionary<PoseJointId, Vector3>(PoseJointIdUtility.JointCount);
@@ -34,23 +71,32 @@ public class HumanoidPoseDriver : MonoBehaviour
     private float referenceShoulderWidth;
     private float referenceHipWidth;
     private float referenceLegExtension;
+    private Vector3 referenceFacingDirection;
+    private Vector3 avatarRootInitialPosition;
+    private Vector3 avatarRootInitialRight;
+    private Vector3 avatarRootInitialForward;
+    private Vector3 referenceHipCenter;
+    private float referenceFootHeight;
+    private bool hasRootPositionReference;
     private Transform chestBone;
     private Transform spineBone;
     private Transform hipsBone;
     private Vector3 hipsInitialLocalPosition;
+    private HandBinding leftHandBinding;
+    private HandBinding rightHandBinding;
 
     private void Reset()
     {
         animator = GetComponentInChildren<Animator>();
         avatarRoot = transform;
-        poseSource = FindFirstObjectByType<PoseSourceBase>();
+        poseSource = FindAnyObjectByType<PoseSourceBase>();
     }
 
     private void Awake()
     {
         if (poseSource == null)
         {
-            poseSource = FindFirstObjectByType<PoseSourceBase>();
+            poseSource = FindAnyObjectByType<PoseSourceBase>();
         }
 
         if (animator == null)
@@ -94,9 +140,11 @@ public class HumanoidPoseDriver : MonoBehaviour
         }
 
         ApplyRootYaw();
+        ApplyRootPosition();
         ApplyHipHeight();
         ApplyTorsoRotation();
         ApplyBoneBindings();
+        ApplyHandRotations();
     }
 
     private void CacheBindings()
@@ -108,10 +156,26 @@ public class HumanoidPoseDriver : MonoBehaviour
             return;
         }
 
-        avatarRootInitialRotation = avatarRoot != null ? avatarRoot.rotation : transform.rotation;
+        Quaternion initialRootRotation = avatarRoot != null ? avatarRoot.rotation : transform.rotation;
+        avatarRootInitialPosition = avatarRoot != null ? avatarRoot.position : transform.position;
+        avatarRootInitialRight = Vector3.ProjectOnPlane(initialRootRotation * Vector3.right, Vector3.up).normalized;
+        avatarRootInitialForward = Vector3.ProjectOnPlane(initialRootRotation * Vector3.forward, Vector3.up).normalized;
+        if (avatarRootInitialRight.sqrMagnitude < 0.0001f)
+        {
+            avatarRootInitialRight = Vector3.right;
+        }
+
+        if (avatarRootInitialForward.sqrMagnitude < 0.0001f)
+        {
+            avatarRootInitialForward = Vector3.forward;
+        }
+
+        avatarRootInitialRotation = initialRootRotation * Quaternion.AngleAxis(rootFacingOffsetDegrees, Vector3.up);
         referenceShoulderWidth = 0f;
         referenceHipWidth = 0f;
         referenceLegExtension = 0f;
+        referenceFacingDirection = Vector3.zero;
+        hasRootPositionReference = false;
 
         hipsBone = animator.GetBoneTransform(HumanBodyBones.Hips);
         spineBone = animator.GetBoneTransform(HumanBodyBones.Spine);
@@ -135,15 +199,32 @@ public class HumanoidPoseDriver : MonoBehaviour
 
         restTorsoDirection = GetRestTorsoDirection();
 
-        AddBinding(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, PoseJointId.LeftShoulder, PoseJointId.LeftElbow);
-        AddBinding(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, PoseJointId.RightShoulder, PoseJointId.RightElbow);
-        AddBinding(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, PoseJointId.LeftElbow, PoseJointId.LeftWrist, driveIfEnabled: driveHandBones);
-        AddBinding(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, PoseJointId.RightElbow, PoseJointId.RightWrist, driveIfEnabled: driveHandBones);
-        AddBinding(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, PoseJointId.LeftHip, PoseJointId.LeftKnee);
-        AddBinding(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, PoseJointId.LeftKnee, PoseJointId.LeftAnkle);
-        AddBinding(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, PoseJointId.RightHip, PoseJointId.RightKnee);
-        AddBinding(HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, PoseJointId.RightKnee, PoseJointId.RightAnkle);
-        AddBinding(HumanBodyBones.Head, HumanBodyBones.Head, PoseJointId.LeftShoulder, PoseJointId.Nose, true);
+        AddBinding(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, PoseJointId.LeftShoulder, PoseJointId.LeftElbow, group: BindingGroup.Arms);
+        AddBinding(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, PoseJointId.RightShoulder, PoseJointId.RightElbow, group: BindingGroup.Arms);
+        AddBinding(HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm, PoseJointId.Neck, PoseJointId.LeftShoulder, group: BindingGroup.Arms);
+        AddBinding(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm, PoseJointId.Neck, PoseJointId.RightShoulder, group: BindingGroup.Arms);
+        AddBinding(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, PoseJointId.LeftElbow, PoseJointId.LeftWrist, driveIfEnabled: driveLowerArmBones, group: BindingGroup.Arms);
+        AddBinding(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, PoseJointId.RightElbow, PoseJointId.RightWrist, driveIfEnabled: driveLowerArmBones, group: BindingGroup.Arms);
+        AddBinding(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, PoseJointId.LeftHip, PoseJointId.LeftKnee, group: BindingGroup.Legs);
+        AddBinding(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, PoseJointId.LeftKnee, PoseJointId.LeftAnkle, group: BindingGroup.Legs);
+        AddBinding(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, PoseJointId.RightHip, PoseJointId.RightKnee, group: BindingGroup.Legs);
+        AddBinding(HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, PoseJointId.RightKnee, PoseJointId.RightAnkle, group: BindingGroup.Legs);
+        AddBinding(HumanBodyBones.Head, HumanBodyBones.Head, PoseJointId.Neck, PoseJointId.Head, true, group: BindingGroup.Head);
+
+        leftHandBinding = CreateHandBinding(
+            HumanBodyBones.LeftHand,
+            HumanBodyBones.LeftMiddleProximal,
+            HumanBodyBones.LeftThumbProximal,
+            Quaternion.Euler(leftHandRotationOffsetEuler),
+            invertLeftHandAimDirection,
+            invertLeftHandRoll);
+        rightHandBinding = CreateHandBinding(
+            HumanBodyBones.RightHand,
+            HumanBodyBones.RightMiddleProximal,
+            HumanBodyBones.RightThumbProximal,
+            Quaternion.Euler(rightHandRotationOffsetEuler),
+            invertRightHandAimDirection,
+            invertRightHandRoll);
     }
 
     private bool BuildNormalizedPose(PoseFrame frame)
@@ -211,6 +292,26 @@ public class HumanoidPoseDriver : MonoBehaviour
             return;
         }
 
+        if (TryGetFacingDirection3D(out Vector3 facingDirection))
+        {
+            if (referenceFacingDirection == Vector3.zero)
+            {
+                referenceFacingDirection = facingDirection;
+            }
+
+            float targetYaw = Vector3.SignedAngle(referenceFacingDirection, facingDirection, Vector3.up);
+            targetYaw = Mathf.Clamp(targetYaw, -maxRootYawDegrees, maxRootYawDegrees);
+            if (invertRootYaw)
+            {
+                targetYaw *= -1f;
+            }
+
+            Quaternion targetRotation = avatarRootInitialRotation * Quaternion.AngleAxis(targetYaw, Vector3.up);
+            float directBlend = 1f - Mathf.Exp(-rootYawResponsiveness * Time.deltaTime);
+            avatarRoot.rotation = Quaternion.Slerp(avatarRoot.rotation, targetRotation, directBlend);
+            return;
+        }
+
         if (!TryGetRawJoint(PoseJointId.LeftShoulder, out Vector3 leftShoulder) ||
             !TryGetRawJoint(PoseJointId.RightShoulder, out Vector3 rightShoulder) ||
             !TryGetRawJoint(PoseJointId.LeftHip, out Vector3 leftHip) ||
@@ -247,15 +348,41 @@ public class HumanoidPoseDriver : MonoBehaviour
         Vector3 shoulderCenter = (leftShoulder + rightShoulder) * 0.5f;
         float signedFacingOffset = (facingAnchor.x - shoulderCenter.x) / Mathf.Max(shoulderWidth * 0.5f, 0.001f);
         float yawSign = Mathf.Abs(signedFacingOffset) > 0.08f ? Mathf.Sign(signedFacingOffset) : 0f;
-        float targetYaw = Mathf.Clamp(unsignedYaw, 0f, maxRootYawDegrees) * yawSign;
+        float fallbackTargetYaw = Mathf.Clamp(unsignedYaw, 0f, maxRootYawDegrees) * yawSign;
         if (invertRootYaw)
         {
-            targetYaw *= -1f;
+            fallbackTargetYaw *= -1f;
         }
 
-        Quaternion targetRotation = avatarRootInitialRotation * Quaternion.AngleAxis(targetYaw, Vector3.up);
+        Quaternion fallbackTargetRotation = avatarRootInitialRotation * Quaternion.AngleAxis(fallbackTargetYaw, Vector3.up);
         float blend = 1f - Mathf.Exp(-rootYawResponsiveness * Time.deltaTime);
-        avatarRoot.rotation = Quaternion.Slerp(avatarRoot.rotation, targetRotation, blend);
+        avatarRoot.rotation = Quaternion.Slerp(avatarRoot.rotation, fallbackTargetRotation, blend);
+    }
+
+    private bool TryGetFacingDirection3D(out Vector3 facingDirection)
+    {
+        facingDirection = default;
+
+        if (!TryGetRawJoint(PoseJointId.LeftShoulder, out Vector3 leftShoulder) ||
+            !TryGetRawJoint(PoseJointId.RightShoulder, out Vector3 rightShoulder) ||
+            !TryGetAverageRawJoint(PoseJointId.LeftHip, PoseJointId.RightHip, out Vector3 hipCenter))
+        {
+            return false;
+        }
+
+        Vector3 shoulderCenter = (leftShoulder + rightShoulder) * 0.5f;
+        Vector3 across = rightShoulder - leftShoulder;
+        Vector3 up = shoulderCenter - hipCenter;
+        Vector3 forward = Vector3.Cross(across, up);
+        Vector3 horizontal = Vector3.ProjectOnPlane(forward, Vector3.up);
+
+        if (horizontal.sqrMagnitude < 0.0001f)
+        {
+            return false;
+        }
+
+        facingDirection = horizontal.normalized;
+        return true;
     }
 
     private void ApplyHipHeight()
@@ -288,6 +415,52 @@ public class HumanoidPoseDriver : MonoBehaviour
         Vector3 targetLocalPosition = hipsInitialLocalPosition + (Vector3.down * (crouchAmount * maxHipDrop));
         float blend = 1f - Mathf.Exp(-hipHeightResponsiveness * Time.deltaTime);
         hipsBone.localPosition = Vector3.Lerp(hipsBone.localPosition, targetLocalPosition, blend);
+    }
+
+    private void ApplyRootPosition()
+    {
+        if (!driveRootPosition || avatarRoot == null)
+        {
+            return;
+        }
+
+        if (!TryGetAverageRawJoint(PoseJointId.LeftHip, PoseJointId.RightHip, out Vector3 hipCenter))
+        {
+            return;
+        }
+
+        bool hasFootCenter = TryGetAverageRawJoint(PoseJointId.LeftAnkle, PoseJointId.RightAnkle, out Vector3 footCenter);
+        if (!hasRootPositionReference)
+        {
+            referenceHipCenter = hipCenter;
+            referenceFootHeight = hasFootCenter ? footCenter.y : hipCenter.y;
+            hasRootPositionReference = true;
+        }
+
+        Vector3 hipDelta = hipCenter - referenceHipCenter;
+        Vector3 horizontalOffset = (avatarRootInitialRight * (hipDelta.x * rootPositionScale.x)) +
+                                   (avatarRootInitialForward * (hipDelta.z * rootPositionScale.z));
+
+        float targetY = avatarRootInitialPosition.y;
+        if (driveRootHeight)
+        {
+            targetY += hipDelta.y * rootPositionScale.y;
+        }
+
+        if (keepFeetGrounded && hasFootCenter)
+        {
+            float footHeightDelta = Mathf.Clamp((footCenter.y - referenceFootHeight) * rootPositionScale.y, -maxFootHeightOffset, maxFootHeightOffset);
+            float floorHeight = avatarRootInitialPosition.y + footHeightDelta;
+            targetY = Mathf.Max(targetY, floorHeight);
+        }
+
+        Vector3 targetPosition = new Vector3(
+            avatarRootInitialPosition.x + horizontalOffset.x,
+            targetY,
+            avatarRootInitialPosition.z + horizontalOffset.z);
+
+        float blend = 1f - Mathf.Exp(-rootPositionResponsiveness * Time.deltaTime);
+        avatarRoot.position = Vector3.Lerp(avatarRoot.position, targetPosition, blend);
     }
 
     private void ApplyTorsoRotation()
@@ -350,10 +523,72 @@ public class HumanoidPoseDriver : MonoBehaviour
                 continue;
             }
 
+            if (binding.invertDirection)
+            {
+                targetDirection = -targetDirection;
+            }
+
             Quaternion delta = Quaternion.FromToRotation(binding.restDirectionRootSpace, targetDirection);
-            Quaternion targetRotation = ToRootSpaceRotation(delta * binding.initialWorldRotationInRootSpace);
+            Quaternion targetRotation = ToRootSpaceRotation(delta * binding.initialWorldRotationInRootSpace * binding.rotationOffsetInRootSpace);
             binding.bone.rotation = Quaternion.Slerp(binding.bone.rotation, targetRotation, blend);
         }
+    }
+
+    private void ApplyHandRotations()
+    {
+        if (!driveHandRotations)
+        {
+            return;
+        }
+
+        float blend = 1f - Mathf.Exp(-rotationResponsiveness * Time.deltaTime);
+        ApplyHandRotation(leftHandBinding, PoseJointId.LeftWrist, PoseJointId.LeftHandTip, PoseJointId.LeftThumb, blend);
+        ApplyHandRotation(rightHandBinding, PoseJointId.RightWrist, PoseJointId.RightHandTip, PoseJointId.RightThumb, blend);
+    }
+
+    private void ApplyHandRotation(HandBinding binding, PoseJointId wristJoint, PoseJointId handTipJoint, PoseJointId thumbJoint, float blend)
+    {
+        if (!binding.isValid || binding.bone == null)
+        {
+            return;
+        }
+
+        if (!TryGetNormalizedJoint(wristJoint, out Vector3 wrist) ||
+            !TryGetNormalizedJoint(handTipJoint, out Vector3 handTip))
+        {
+            return;
+        }
+
+        Vector3 forward = handTip - wrist;
+        if (forward.sqrMagnitude < 0.0001f)
+        {
+            return;
+        }
+
+        if (binding.invertAimDirection)
+        {
+            forward = -forward;
+        }
+
+        Vector3 up = binding.restUpRootSpace;
+        if (TryGetNormalizedJoint(thumbJoint, out Vector3 thumb))
+        {
+            Vector3 thumbDirection = Vector3.ProjectOnPlane(thumb - wrist, forward);
+            if (thumbDirection.sqrMagnitude > 0.0001f)
+            {
+                up = thumbDirection.normalized;
+            }
+        }
+
+        if (binding.invertRoll)
+        {
+            up = -up;
+        }
+
+        Quaternion targetBasis = CreateBasisRotation(forward, up);
+        Quaternion delta = targetBasis * Quaternion.Inverse(binding.restBasisInRootSpace);
+        Quaternion targetRotation = ToRootSpaceRotation(delta * binding.initialWorldRotationInRootSpace * binding.rotationOffsetInRootSpace);
+        binding.bone.rotation = Quaternion.Slerp(binding.bone.rotation, targetRotation, blend);
     }
 
     private Quaternion ToRootSpaceRotation(Quaternion rootSpaceRotation)
@@ -380,7 +615,8 @@ public class HumanoidPoseDriver : MonoBehaviour
         PoseJointId startJoint,
         PoseJointId endJoint,
         bool fallbackToSelf = false,
-        bool driveIfEnabled = true)
+        bool driveIfEnabled = true,
+        BindingGroup group = BindingGroup.Other)
     {
         if (!driveIfEnabled)
         {
@@ -402,7 +638,7 @@ public class HumanoidPoseDriver : MonoBehaviour
             childBone = bone;
         }
 
-        Vector3 restDirection = GetRestDirectionRootSpace(bone, childBone, endJoint == PoseJointId.Nose ? Vector3.up : Vector3.right);
+        Vector3 restDirection = GetRestDirectionRootSpace(bone, childBone, GetFallbackDirection(group, endJoint));
 
         Quaternion inverseRoot = Quaternion.Inverse(avatarRoot != null ? avatarRoot.rotation : Quaternion.identity);
         boneBindings.Add(new BoneBinding
@@ -411,8 +647,47 @@ public class HumanoidPoseDriver : MonoBehaviour
             startJoint = startJoint,
             endJoint = endJoint,
             restDirectionRootSpace = restDirection,
+            invertDirection = ShouldInvertDirection(group),
+            rotationOffsetInRootSpace = Quaternion.Euler(GetRotationOffset(group)),
             initialWorldRotationInRootSpace = inverseRoot * bone.rotation,
         });
+    }
+
+    private Vector3 GetFallbackDirection(BindingGroup group, PoseJointId endJoint)
+    {
+        if (endJoint == PoseJointId.Head || endJoint == PoseJointId.Nose)
+        {
+            return Vector3.up;
+        }
+
+        return group switch
+        {
+            BindingGroup.Legs => Vector3.down,
+            BindingGroup.Head => Vector3.up,
+            _ => Vector3.right,
+        };
+    }
+
+    private bool ShouldInvertDirection(BindingGroup group)
+    {
+        return group switch
+        {
+            BindingGroup.Arms => invertArmDirections,
+            BindingGroup.Legs => invertLegDirections,
+            BindingGroup.Head => invertHeadDirection,
+            _ => false,
+        };
+    }
+
+    private Vector3 GetRotationOffset(BindingGroup group)
+    {
+        return group switch
+        {
+            BindingGroup.Arms => armRotationOffsetEuler,
+            BindingGroup.Legs => legRotationOffsetEuler,
+            BindingGroup.Head => headRotationOffsetEuler,
+            _ => Vector3.zero,
+        };
     }
 
     private Vector3 GetRestDirectionRootSpace(Transform bone, Transform childBone, Vector3 fallbackDirection)
@@ -429,6 +704,60 @@ public class HumanoidPoseDriver : MonoBehaviour
         }
 
         return fallbackDirection.normalized;
+    }
+
+    private HandBinding CreateHandBinding(
+        HumanBodyBones handBoneId,
+        HumanBodyBones fingerBoneId,
+        HumanBodyBones thumbBoneId,
+        Quaternion rotationOffset,
+        bool invertAimDirection,
+        bool invertRoll)
+    {
+        Transform handBone = animator.GetBoneTransform(handBoneId);
+        if (handBone == null)
+        {
+            return default;
+        }
+
+        Transform fingerBone = animator.GetBoneTransform(fingerBoneId);
+        Transform thumbBone = animator.GetBoneTransform(thumbBoneId);
+        Quaternion inverseRoot = Quaternion.Inverse(avatarRoot != null ? avatarRoot.rotation : Quaternion.identity);
+
+        Vector3 restForward = GetRestDirectionRootSpace(handBone, fingerBone, Vector3.right);
+        Vector3 restUp = thumbBone != null
+            ? inverseRoot * (thumbBone.position - handBone.position)
+            : inverseRoot * handBone.TransformDirection(Vector3.up);
+
+        if (restUp.sqrMagnitude < 0.0001f)
+        {
+            restUp = Vector3.up;
+        }
+
+        return new HandBinding
+        {
+            bone = handBone,
+            isValid = true,
+            invertAimDirection = invertAimDirection,
+            invertRoll = invertRoll,
+            restUpRootSpace = restUp.normalized,
+            restBasisInRootSpace = CreateBasisRotation(restForward, restUp),
+            initialWorldRotationInRootSpace = inverseRoot * handBone.rotation,
+            rotationOffsetInRootSpace = rotationOffset,
+        };
+    }
+
+    private static Quaternion CreateBasisRotation(Vector3 forward, Vector3 up)
+    {
+        Vector3 normalizedForward = forward.sqrMagnitude > 0.0001f ? forward.normalized : Vector3.forward;
+        Vector3 projectedUp = Vector3.ProjectOnPlane(up, normalizedForward);
+        if (projectedUp.sqrMagnitude < 0.0001f)
+        {
+            projectedUp = Mathf.Abs(Vector3.Dot(normalizedForward, Vector3.up)) > 0.98f ? Vector3.right : Vector3.up;
+            projectedUp = Vector3.ProjectOnPlane(projectedUp, normalizedForward);
+        }
+
+        return Quaternion.LookRotation(normalizedForward, projectedUp.normalized);
     }
 
     private bool TryGetNormalizedJoint(PoseJointId jointId, out Vector3 position)
@@ -548,6 +877,28 @@ public class HumanoidPoseDriver : MonoBehaviour
         public PoseJointId startJoint;
         public PoseJointId endJoint;
         public Vector3 restDirectionRootSpace;
+        public bool invertDirection;
+        public Quaternion rotationOffsetInRootSpace;
         public Quaternion initialWorldRotationInRootSpace;
+    }
+
+    private struct HandBinding
+    {
+        public Transform bone;
+        public bool isValid;
+        public bool invertAimDirection;
+        public bool invertRoll;
+        public Vector3 restUpRootSpace;
+        public Quaternion restBasisInRootSpace;
+        public Quaternion initialWorldRotationInRootSpace;
+        public Quaternion rotationOffsetInRootSpace;
+    }
+
+    private enum BindingGroup
+    {
+        Other,
+        Arms,
+        Legs,
+        Head,
     }
 }

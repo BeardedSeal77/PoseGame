@@ -61,6 +61,12 @@ public class DebugPoseSource : PoseSourceBase
         Vector3 rightElbow = rightShoulder + DirectionFromDegrees(180f - rightArmAngle) * upperArmLength;
         Vector3 leftWrist = leftElbow + DirectionFromDegrees(leftArmAngle) * lowerArmLength + (Vector3)leftHandOffset;
         Vector3 rightWrist = rightElbow + DirectionFromDegrees(180f - rightArmAngle) * lowerArmLength + (Vector3)rightHandOffset;
+        Vector3 leftForearmDirection = (leftWrist - leftElbow).normalized;
+        Vector3 rightForearmDirection = (rightWrist - rightElbow).normalized;
+        Vector3 leftHandTip = leftWrist + (leftForearmDirection * 0.14f);
+        Vector3 rightHandTip = rightWrist + (rightForearmDirection * 0.14f);
+        Vector3 leftThumb = leftWrist + Vector3.Cross(leftForearmDirection, Vector3.forward).normalized * 0.08f;
+        Vector3 rightThumb = rightWrist + Vector3.Cross(rightForearmDirection, Vector3.back).normalized * 0.08f;
 
         Vector3 leftKnee = leftHip + DirectionFromDegrees(leftLegAngle) * upperLegLength;
         Vector3 rightKnee = rightHip + DirectionFromDegrees(rightLegAngle) * upperLegLength;
@@ -68,6 +74,8 @@ public class DebugPoseSource : PoseSourceBase
         Vector3 rightAnkle = rightKnee + DirectionFromDegrees(rightLegAngle) * lowerLegLength;
 
         Vector3 nose = shoulderCenter + Vector3.up * headHeight;
+        Vector3 neck = shoulderCenter + Vector3.up * (headHeight * 0.35f);
+        Vector3 head = shoulderCenter + Vector3.up * (headHeight * 0.85f);
         Vector3 leftEye = nose + new Vector3(-0.03f, 0.03f, 0f);
         Vector3 rightEye = nose + new Vector3(0.03f, 0.03f, 0f);
         Vector3 leftEar = nose + new Vector3(-0.08f, 0.01f, 0f);
@@ -84,12 +92,18 @@ public class DebugPoseSource : PoseSourceBase
         SetTracked(PoseJointId.RightElbow, rightElbow);
         SetTracked(PoseJointId.LeftWrist, leftWrist);
         SetTracked(PoseJointId.RightWrist, rightWrist);
+        SetTracked(PoseJointId.LeftHandTip, leftHandTip);
+        SetTracked(PoseJointId.RightHandTip, rightHandTip);
+        SetTracked(PoseJointId.LeftThumb, leftThumb);
+        SetTracked(PoseJointId.RightThumb, rightThumb);
         SetTracked(PoseJointId.LeftHip, leftHip);
         SetTracked(PoseJointId.RightHip, rightHip);
         SetTracked(PoseJointId.LeftKnee, leftKnee);
         SetTracked(PoseJointId.RightKnee, rightKnee);
         SetTracked(PoseJointId.LeftAnkle, leftAnkle);
         SetTracked(PoseJointId.RightAnkle, rightAnkle);
+        SetTracked(PoseJointId.Neck, neck);
+        SetTracked(PoseJointId.Head, head);
     }
 
     private void SetTracked(PoseJointId jointId, Vector3 position)

@@ -41,10 +41,26 @@ public static class GameSceneSetup
         CreateBackdrop();
 
         GameObject poseRuntime = new GameObject("PoseRuntime");
+        KinectBodyTracker kinectTracker = poseRuntime.AddComponent<KinectBodyTracker>();
+        KinectPoseSource kinectPoseSource = poseRuntime.AddComponent<KinectPoseSource>();
         UdpPoseSource udpPoseSource = poseRuntime.AddComponent<UdpPoseSource>();
+        PriorityPoseSource priorityPoseSource = poseRuntime.AddComponent<PriorityPoseSource>();
+
+        kinectPoseSource.Configure(kinectTracker);
+        priorityPoseSource.Configure(kinectPoseSource, udpPoseSource);
+
         SerializedObject udpSerializedObject = new SerializedObject(udpPoseSource);
-        udpSerializedObject.FindProperty("autoLaunchPythonStreamer").boolValue = true;
+        udpSerializedObject.FindProperty("autoLaunchPythonStreamer").boolValue = false;
         udpSerializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+        SerializedObject kinectSerializedObject = new SerializedObject(kinectTracker);
+        kinectSerializedObject.FindProperty("autoStartOnEnable").boolValue = true;
+        kinectSerializedObject.FindProperty("readColorFrames").boolValue = true;
+        kinectSerializedObject.ApplyModifiedPropertiesWithoutUndo();
+
+        Camera kinectDebugCamera = CreateKinectDebugRig();
+        KinectDebugRenderer debugRenderer = kinectDebugCamera.gameObject.AddComponent<KinectDebugRenderer>();
+        debugRenderer.Configure(kinectTracker);
 
         GameObject playerRoot = new GameObject("PlayerRoot");
         playerRoot.transform.position = new Vector3(0f, -1.15f, 0f);
@@ -81,7 +97,7 @@ public static class GameSceneSetup
             poseDriver = playerInstance.AddComponent<HumanoidPoseDriver>();
         }
 
-        poseDriver.Configure(udpPoseSource, animator, playerInstance.transform, horizontalMirror: true, swapSides: true);
+        poseDriver.Configure(priorityPoseSource, animator, playerInstance.transform, horizontalMirror: true, swapSides: true);
 
         GameObject wallControllerObject = new GameObject("WallController");
         ScreenWallFitController wallController = wallControllerObject.AddComponent<ScreenWallFitController>();
@@ -98,12 +114,17 @@ public static class GameSceneSetup
         EditorSceneManager.SaveScene(scene, ScenePath);
         EnsureSceneInBuildSettings(ScenePath);
 
-        Selection.activeGameObject = playerInstance;
-        EditorGUIUtility.PingObject(playerInstance);
+        Scene reopenedScene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        GameObject reopenedPlayer = GameObject.Find("PlayerAvatar");
+        if (reopenedPlayer != null)
+        {
+            Selection.activeGameObject = reopenedPlayer;
+            EditorGUIUtility.PingObject(reopenedPlayer);
+        }
 
         EditorUtility.DisplayDialog(
             "Gameplay Scene Ready",
-            "Rebuilt Assets/Scenes/GameScene.unity for live gameplay only. The player was re-instantiated from the selected source, so any stuck authoring pose overrides are gone.",
+            "Rebuilt Assets/Scenes/GameScene.unity with Kinect-first pose tracking, UDP fallback, and a display-2 debug view. The player was re-instantiated from the selected source, so any stuck authoring pose overrides are gone.",
             "OK");
     }
 
@@ -128,6 +149,44 @@ public static class GameSceneSetup
 
         cameraObject.transform.position = new Vector3(0f, 1.35f, -4.5f);
         cameraObject.transform.rotation = Quaternion.identity;
+        return camera;
+    }
+
+    private static Camera CreateKinectDebugRig()
+    {
+        GameObject rig = new GameObject("KinectDebugRig");
+        rig.layer = 6;
+        rig.transform.position = new Vector3(0f, -100f, 0f);
+
+        GameObject videoScreen = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        videoScreen.name = "VideoScreen";
+        videoScreen.layer = 6;
+        videoScreen.transform.SetParent(rig.transform, false);
+        videoScreen.transform.localPosition = new Vector3(0f, 0f, 50f);
+        videoScreen.transform.localRotation = Quaternion.identity;
+        videoScreen.transform.localScale = new Vector3(32f, 18f, 1f);
+        Object.DestroyImmediate(videoScreen.GetComponent<Collider>());
+
+        GameObject cameraObject = new GameObject("Camera");
+        cameraObject.layer = 6;
+        cameraObject.transform.SetParent(rig.transform, false);
+
+        Camera camera = cameraObject.AddComponent<Camera>();
+        camera.clearFlags = CameraClearFlags.SolidColor;
+        camera.backgroundColor = Color.black;
+        camera.cullingMask = 1 << 6;
+        camera.nearClipPlane = 0.3f;
+        camera.farClipPlane = 1000f;
+        camera.depth = 0f;
+        camera.allowHDR = false;
+        camera.allowMSAA = false;
+        camera.orthographic = true;
+        camera.orthographicSize = 9f;
+        camera.targetDisplay = 1;
+
+        cameraObject.transform.localPosition = Vector3.zero;
+        cameraObject.transform.localRotation = Quaternion.AngleAxis(180f, Vector3.forward);
+
         return camera;
     }
 

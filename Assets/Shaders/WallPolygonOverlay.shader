@@ -2,6 +2,7 @@ Shader "Hidden/PoseGame/WallPolygonOverlay"
 {
     Properties
     {
+        [PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
         _MaskColor ("Mask Color", Color) = (0.35, 0.35, 0.35, 0.55)
         _OutlineColor ("Outline Color", Color) = (0.7, 0.7, 0.7, 0.95)
         _OutlineThickness ("Outline Thickness", Float) = 0.006

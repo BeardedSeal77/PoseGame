@@ -13,17 +13,23 @@ public enum PoseJointId
     RightElbow = 8,
     LeftWrist = 9,
     RightWrist = 10,
-    LeftHip = 11,
-    RightHip = 12,
-    LeftKnee = 13,
-    RightKnee = 14,
-    LeftAnkle = 15,
-    RightAnkle = 16,
+    LeftHandTip = 11,
+    RightHandTip = 12,
+    LeftThumb = 13,
+    RightThumb = 14,
+    LeftHip = 15,
+    RightHip = 16,
+    LeftKnee = 17,
+    RightKnee = 18,
+    LeftAnkle = 19,
+    RightAnkle = 20,
+    Neck = 21,
+    Head = 22,
 }
 
 public static class PoseJointIdUtility
 {
-    public const int JointCount = 17;
+    public const int JointCount = 23;
 
     public static bool IsValidIndex(int index)
     {
