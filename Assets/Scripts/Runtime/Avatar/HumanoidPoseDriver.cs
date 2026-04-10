@@ -82,6 +82,11 @@ public class HumanoidPoseDriver : MonoBehaviour
     private Transform spineBone;
     private Transform hipsBone;
     private Vector3 hipsInitialLocalPosition;
+    private Transform leftLowerLegBone;
+    private Transform rightLowerLegBone;
+    private Transform leftFootBone;
+    private Transform rightFootBone;
+    private float groundPlaneY;
     private HandBinding leftHandBinding;
     private HandBinding rightHandBinding;
 
@@ -144,7 +149,9 @@ public class HumanoidPoseDriver : MonoBehaviour
         ApplyHipHeight();
         ApplyTorsoRotation();
         ApplyBoneBindings();
+        ApplyLowerLegsDown();
         ApplyHandRotations();
+        EnforceGroundPlane();
     }
 
     private void CacheBindings()
@@ -199,6 +206,14 @@ public class HumanoidPoseDriver : MonoBehaviour
 
         restTorsoDirection = GetRestTorsoDirection();
 
+        leftLowerLegBone = animator.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
+        rightLowerLegBone = animator.GetBoneTransform(HumanBodyBones.RightLowerLeg);
+        leftFootBone = animator.GetBoneTransform(HumanBodyBones.LeftFoot);
+        rightFootBone = animator.GetBoneTransform(HumanBodyBones.RightFoot);
+        groundPlaneY = Mathf.Min(
+            leftFootBone != null ? leftFootBone.position.y : avatarRootInitialPosition.y,
+            rightFootBone != null ? rightFootBone.position.y : avatarRootInitialPosition.y);
+
         AddBinding(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, PoseJointId.LeftShoulder, PoseJointId.LeftElbow, group: BindingGroup.Arms);
         AddBinding(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, PoseJointId.RightShoulder, PoseJointId.RightElbow, group: BindingGroup.Arms);
         AddBinding(HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm, PoseJointId.Neck, PoseJointId.LeftShoulder, group: BindingGroup.Arms);
@@ -206,9 +221,10 @@ public class HumanoidPoseDriver : MonoBehaviour
         AddBinding(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, PoseJointId.LeftElbow, PoseJointId.LeftWrist, driveIfEnabled: driveLowerArmBones, group: BindingGroup.Arms);
         AddBinding(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, PoseJointId.RightElbow, PoseJointId.RightWrist, driveIfEnabled: driveLowerArmBones, group: BindingGroup.Arms);
         AddBinding(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, PoseJointId.LeftHip, PoseJointId.LeftKnee, group: BindingGroup.Legs);
-        AddBinding(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, PoseJointId.LeftKnee, PoseJointId.LeftAnkle, group: BindingGroup.Legs);
         AddBinding(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, PoseJointId.RightHip, PoseJointId.RightKnee, group: BindingGroup.Legs);
-        AddBinding(HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, PoseJointId.RightKnee, PoseJointId.RightAnkle, group: BindingGroup.Legs);
+        // Lower leg bindings (knee→ankle) removed: Kinect ankle tracking is
+        // too noisy and causes feet to glitch. The lower legs inherit rotation
+        // from the upper legs via forward kinematics instead.
         AddBinding(HumanBodyBones.Head, HumanBodyBones.Head, PoseJointId.Neck, PoseJointId.Head, true, group: BindingGroup.Head);
 
         leftHandBinding = CreateHandBinding(
@@ -448,6 +464,67 @@ public class HumanoidPoseDriver : MonoBehaviour
 
         float blend = 1f - Mathf.Exp(-rootPositionResponsiveness * Time.deltaTime);
         avatarRoot.position = Vector3.Lerp(avatarRoot.position, targetPosition, blend);
+    }
+
+    /// <summary>
+    /// Forces each lower leg (shin) to point straight down from the knee,
+    /// ignoring noisy Kinect ankle data. The foot bone inherits this and
+    /// ends up below the knee naturally.
+    /// </summary>
+    private void ApplyLowerLegsDown()
+    {
+        float blend = 1f - Mathf.Exp(-rotationResponsiveness * Time.deltaTime);
+        PointBoneDown(leftLowerLegBone, leftFootBone, blend);
+        PointBoneDown(rightLowerLegBone, rightFootBone, blend);
+    }
+
+    private void PointBoneDown(Transform lowerLeg, Transform foot, float blend)
+    {
+        if (lowerLeg == null || foot == null)
+        {
+            return;
+        }
+
+        Vector3 currentDirection = (foot.position - lowerLeg.position).normalized;
+        if (currentDirection.sqrMagnitude < 0.0001f)
+        {
+            return;
+        }
+
+        Quaternion correction = Quaternion.FromToRotation(currentDirection, Vector3.down);
+        Quaternion targetRotation = correction * lowerLeg.rotation;
+        lowerLeg.rotation = Quaternion.Slerp(lowerLeg.rotation, targetRotation, blend);
+    }
+
+    /// <summary>
+    /// Runs after all bone rotations. Checks the lowest foot position and
+    /// pushes the root up if a foot has clipped below the ground plane.
+    /// </summary>
+    private void EnforceGroundPlane()
+    {
+        if (avatarRoot == null)
+        {
+            return;
+        }
+
+        float lowestFootY = float.MaxValue;
+        if (leftFootBone != null)
+        {
+            lowestFootY = Mathf.Min(lowestFootY, leftFootBone.position.y);
+        }
+
+        if (rightFootBone != null)
+        {
+            lowestFootY = Mathf.Min(lowestFootY, rightFootBone.position.y);
+        }
+
+        if (lowestFootY >= groundPlaneY || lowestFootY >= float.MaxValue)
+        {
+            return;
+        }
+
+        float correction = groundPlaneY - lowestFootY;
+        avatarRoot.position += new Vector3(0f, correction, 0f);
     }
 
     private void ApplyTorsoRotation()

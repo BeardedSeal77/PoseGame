@@ -46,7 +46,7 @@ public class ScreenWallFitController : MonoBehaviour
     [Header("Scoring")]
     [Tooltip("Viewport-space radius added to each bone segment for collision. Represents limb thickness.")]
     [SerializeField, Range(0.005f, 0.06f)] private float boneRadius = 0.02f;
-    [SerializeField, Range(0f, 0.08f)] private float fitPadding = 0.015f;
+    [SerializeField, Range(0f, 0.12f)] private float fitPadding = 0.05f;
     [SerializeField, Range(0.5f, 2f)] private float orbRadiusMultiplier = 1f;
     [SerializeField] private Color orbInactiveColor = new Color(1f, 0.75f, 0.2f, 0.9f);
     [SerializeField] private Color orbActiveColor = new Color(0.15f, 1f, 0.35f, 0.95f);
@@ -690,25 +690,21 @@ public class ScreenWallFitController : MonoBehaviour
             return;
         }
 
+        // Arms
         AddBoneSegment(HumanBodyBones.LeftUpperArm, HumanBodyBones.LeftLowerArm, 4);
         AddBoneSegment(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand, 4);
         AddBoneSegment(HumanBodyBones.RightUpperArm, HumanBodyBones.RightLowerArm, 4);
         AddBoneSegment(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand, 4);
-        AddBoneSegment(HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, 4);
-        AddBoneSegment(HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, 4);
-        AddBoneSegment(HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, 4);
-        AddBoneSegment(HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, 4);
+        // Legs excluded from pose evaluation - Kinect leg tracking is too
+        // noisy. Only hips, torso, head and arms are checked.
 
         Transform leftUpperArm = targetAnimator.GetBoneTransform(HumanBodyBones.LeftUpperArm);
         Transform rightUpperArm = targetAnimator.GetBoneTransform(HumanBodyBones.RightUpperArm);
-        Transform leftUpperLeg = targetAnimator.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
-        Transform rightUpperLeg = targetAnimator.GetBoneTransform(HumanBodyBones.RightUpperLeg);
         Transform chest = targetAnimator.GetBoneTransform(HumanBodyBones.Chest);
         Transform hips = targetAnimator.GetBoneTransform(HumanBodyBones.Hips);
         Transform head = targetAnimator.GetBoneTransform(HumanBodyBones.Head);
 
         AddSegment(leftUpperArm, rightUpperArm, 5);
-        AddSegment(leftUpperLeg, rightUpperLeg, 5);
         AddSegment(chest, hips, 5);
         AddSegment(head, head, 1);
     }
