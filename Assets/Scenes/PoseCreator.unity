@@ -637,7 +637,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::PoseShapeAuthoringRig
   targetAnimator: {fileID: 281718872}
   authoringCamera: {fileID: 638279779}
-  shapeAsset: {fileID: 11400000, guid: 7662e7cfc4ea7d247a8157eb8d33b2cf, type: 2}
+  shapeAsset: {fileID: 11400000, guid: 633d4f1e09632d041bf97ae032235980, type: 2}
   referencePoseAnimator: {fileID: 1821005473}
   autoSolveInEditMode: 1
   ikIterations: 8
@@ -1238,6 +1238,8 @@ MonoBehaviour:
   - {x: 0.4, y: 0}
   - {x: 0.6, y: 0}
   - {x: 0.6, y: 0.5}
+  - {x: 0.55, y: 0.7}
+  - {x: 0.45000002, y: 0.7}
   - {x: 0.4, y: 0.5}
 --- !u!4 &532854936
 Transform:
