@@ -33,17 +33,19 @@ public class ScreenWallFitController : MonoBehaviour
     [SerializeField] private Vector2 wallTextureTiling = new Vector2(0.45f, 0.45f);
     [SerializeField, Range(0f, 1f)] private float wallSmoothness = 0.15f;
 
-    [Header("Evaluation Camera (Isometric Mode)")]
-    [Tooltip("Distance of the front-facing evaluation camera from the avatar center.")]
-    [SerializeField, Min(0.5f)] private float evaluationCameraDistance = 3.5f;
-    [Tooltip("Field of view for the evaluation camera.")]
-    [SerializeField, Range(20f, 80f)] private float evaluationCameraFOV = 40f;
-    [Tooltip("Height offset of the evaluation camera above the avatar root.")]
-    [SerializeField, Min(0f)] private float evaluationCameraHeightOffset = 1f;
-    [Tooltip("How far away walls spawn before approaching the character.")]
-    [SerializeField, Min(1f)] private float wallApproachDistance = 10f;
+    [Header("Evaluation Camera")]
+    [Tooltip("Z distance of the evaluation camera (matches pose creator at 4.5).")]
+    [SerializeField, Min(0.5f)] private float evaluationCameraDistance = 4.5f;
+    [Tooltip("Field of view for the evaluation camera (matches pose creator at 32).")]
+    [SerializeField, Range(20f, 80f)] private float evaluationCameraFOV = 32f;
+    [Tooltip("Height of the evaluation camera (matches pose creator at 1.35).")]
+    [SerializeField] private float evaluationCameraHeightOffset = 1.35f;
+    [Tooltip("Scale of the wall when it first appears. Shrinks to 1 over the shrink duration.")]
+    [SerializeField, Min(1.1f)] private float wallStartScale = 3f;
 
     [Header("Scoring")]
+    [Tooltip("Viewport-space radius added to each bone segment for collision. Represents limb thickness.")]
+    [SerializeField, Range(0.005f, 0.06f)] private float boneRadius = 0.02f;
     [SerializeField, Range(0f, 0.08f)] private float fitPadding = 0.015f;
     [SerializeField, Range(0.5f, 2f)] private float orbRadiusMultiplier = 1f;
     [SerializeField] private Color orbInactiveColor = new Color(1f, 0.75f, 0.2f, 0.9f);
@@ -76,7 +78,6 @@ public class ScreenWallFitController : MonoBehaviour
     private float stateTime;
     private bool lastResultPassed;
     private float currentShrinkDuration;
-    private float currentWallStartOffset;
     private float currentWallTargetDepth;
 
     private enum WallState
@@ -128,8 +129,11 @@ public class ScreenWallFitController : MonoBehaviour
 
     private void CreateEvaluationCamera()
     {
+        // Match the pose creator camera exactly so wall shapes authored there
+        // appear identically at runtime. Pose creator: pos (0, 1.35, -4.5),
+        // FOV 32, identity rotation, 16:9 aspect.
         GameObject evalCamObj = new GameObject("EvaluationCamera");
-        evalCamObj.transform.SetParent(transform, false);
+        evalCamObj.transform.SetParent(null, false);
         evaluationCamera = evalCamObj.AddComponent<Camera>();
         evaluationCamera.orthographic = false;
         evaluationCamera.fieldOfView = evaluationCameraFOV;
@@ -139,11 +143,8 @@ public class ScreenWallFitController : MonoBehaviour
         evaluationCamera.enabled = false;
         evaluationCamera.cullingMask = 0;
 
-        Vector3 avatarCenter = targetAnimator != null
-            ? targetAnimator.transform.position + Vector3.up * evaluationCameraHeightOffset
-            : Vector3.up * evaluationCameraHeightOffset;
-        evalCamObj.transform.position = avatarCenter + Vector3.back * evaluationCameraDistance;
-        evalCamObj.transform.rotation = Quaternion.LookRotation(Vector3.forward);
+        evalCamObj.transform.position = new Vector3(0f, evaluationCameraHeightOffset, -evaluationCameraDistance);
+        evalCamObj.transform.rotation = Quaternion.identity;
     }
 
     private void Start()
@@ -213,23 +214,20 @@ public class ScreenWallFitController : MonoBehaviour
         stateTime = 0f;
         state = WallState.Shrinking;
         currentWallTargetDepth = Mathf.Max(evaluationCamera.nearClipPlane + 0.1f, EstimateAvatarDepth() - (wallThickness * 0.5f));
-        currentWallStartOffset = wallApproachDistance;
 
         if (useThreeDimensionalWall)
         {
             EnsureRuntimeWall();
             runtimeWall.SetVisible(true);
             runtimeWall.UpdateMesh(targetShapePolygon, currentWallTargetDepth, wallThickness, wallColor, wallMaterial, wallTexture, wallTextureTiling, wallSmoothness);
-            runtimeWall.SetTravelOffset(currentWallStartOffset);
-            overlay.SetVisible(true);
-            overlay.ApplyOverlay(null, targetShapePolygon, outlineThickness, Color.clear, outlineColor);
-        }
-        else
-        {
-            overlay.SetVisible(true);
-            overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+            runtimeWall.SetTravelOffset(0f);
+            runtimeWall.SetScale(wallStartScale);
         }
 
+        // Show the overlay with shrinking animated polygon and fixed target outline,
+        // exactly as the original 2D-only version did.
+        overlay.SetVisible(true);
+        overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
         overlay.SetFlashColor(Color.clear, 0f);
         overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
     }
@@ -280,7 +278,7 @@ public class ScreenWallFitController : MonoBehaviour
 
     private void UpdateShrink()
     {
-        if (!useThreeDimensionalWall && overlay == null)
+        if (overlay == null)
         {
             EnsureOverlay();
             if (overlay == null)
@@ -297,22 +295,20 @@ public class ScreenWallFitController : MonoBehaviour
         float t = Mathf.Clamp01(stateTime / duration);
         UpdateOrbHitStates();
 
+        // Animate the 2D overlay polygon from full-screen toward the target shape.
+        LerpPolygon(startShapePolygon, targetShapePolygon, t, animatedShapePolygon);
+        currentCutoutRect = BuildBounds(animatedShapePolygon);
+
         if (useThreeDimensionalWall)
         {
             EnsureRuntimeWall();
-            float offset = Mathf.Lerp(currentWallStartOffset, 0f, t);
-            runtimeWall.SetTravelOffset(offset);
-            overlay.SetVisible(true);
-            overlay.ApplyOverlay(null, targetShapePolygon, outlineThickness, Color.clear, outlineColor);
-            overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
+            float currentScale = Mathf.Lerp(wallStartScale, 1f, t);
+            runtimeWall.SetScale(currentScale);
         }
-        else
-        {
-            LerpPolygon(startShapePolygon, targetShapePolygon, t, animatedShapePolygon);
-            currentCutoutRect = BuildBounds(animatedShapePolygon);
-            overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
-            overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
-        }
+
+        // Show shrinking overlay with the fixed target outline (white pose shape).
+        overlay.ApplyOverlay(animatedShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+        overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
 
         if (t < 1f)
         {
@@ -375,15 +371,8 @@ public class ScreenWallFitController : MonoBehaviour
         Color flashColor = lastResultPassed ? successFlashColor : failureFlashColor;
         overlay.SetVisible(true);
         overlay.SetFlashColor(flashColor, alpha);
-        if (useThreeDimensionalWall)
-        {
-            overlay.ApplyOverlay(null, null, outlineThickness, Color.clear, Color.clear);
-        }
-        else
-        {
-            overlay.ApplyOverlay(targetShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
-            overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
-        }
+        overlay.ApplyOverlay(targetShapePolygon, targetShapePolygon, outlineThickness, overlayColor, outlineColor);
+        overlay.SetOrbTargets(activeOrbTargets, orbHitStates, orbInactiveColor, orbActiveColor, orbRadiusMultiplier);
 
         if (alpha > 0f)
         {
@@ -544,8 +533,17 @@ public class ScreenWallFitController : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Capsule-based pose evaluation. For each bone segment:
+    /// 1) Sample points along the centerline and check they are inside the wall polygon (with padding).
+    /// 2) Model the bone as a capsule (centerline + boneRadius) and check it does not
+    ///    cross any polygon edge. This catches limbs that poke through thin wall sections
+    ///    even if the centerline is technically inside.
+    /// </summary>
     private bool EvaluateCurrentPoseAgainstPolygon()
     {
+        float effectiveRadius = boneRadius + fitPadding;
+
         for (int index = 0; index < trackedSegments.Count; index++)
         {
             TrackedSegment segment = trackedSegments[index];
@@ -554,26 +552,76 @@ public class ScreenWallFitController : MonoBehaviour
                 continue;
             }
 
+            Vector3 startWorld = segment.start.position;
+            Vector3 endWorld = segment.end.position;
+            Vector3 startVP = evaluationCamera.WorldToViewportPoint(startWorld);
+            Vector3 endVP = evaluationCamera.WorldToViewportPoint(endWorld);
+
+            if (startVP.z <= 0f || endVP.z <= 0f)
+            {
+                return false;
+            }
+
+            Vector2 segA = new Vector2(startVP.x, startVP.y);
+            Vector2 segB = new Vector2(endVP.x, endVP.y);
+
+            // Check centerline sample points are inside the polygon.
             int samples = Mathf.Max(2, segment.sampleCount);
             for (int sampleIndex = 0; sampleIndex < samples; sampleIndex++)
             {
                 float t = samples == 1 ? 0f : sampleIndex / (float)(samples - 1);
-                Vector3 worldPoint = Vector3.Lerp(segment.start.position, segment.end.position, t);
-                Vector3 viewportPoint = evaluationCamera.WorldToViewportPoint(worldPoint);
+                Vector2 point = Vector2.Lerp(segA, segB, t);
 
-                if (viewportPoint.z <= 0f)
-                {
-                    return false;
-                }
-
-                if (!ContainsPointInPolygonWithPadding(new Vector2(viewportPoint.x, viewportPoint.y), targetShapePolygon, fitPadding))
+                if (!ContainsPointInPolygonWithPadding(point, targetShapePolygon, fitPadding))
                 {
                     return false;
                 }
             }
+
+            // Capsule-vs-edge test: check that no polygon edge is closer than
+            // effectiveRadius to the bone segment. This catches limbs that are
+            // technically "inside" by centerline but whose width clips the wall.
+            if (SegmentIntersectsPolygonEdges(segA, segB, targetShapePolygon, effectiveRadius))
+            {
+                return false;
+            }
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Returns true if the minimum distance between line segment (a,b) and any
+    /// edge of the polygon is less than the given radius. This is the capsule-
+    /// vs-polygon-edge intersection test.
+    /// </summary>
+    private static bool SegmentIntersectsPolygonEdges(Vector2 a, Vector2 b, IReadOnlyList<Vector2> polygon, float radius)
+    {
+        float squaredRadius = radius * radius;
+        for (int i = 0; i < polygon.Count; i++)
+        {
+            int next = (i + 1) % polygon.Count;
+            float sqDist = SquaredDistanceBetweenSegments(a, b, polygon[i], polygon[next]);
+            if (sqDist < squaredRadius)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Squared minimum distance between two 2D line segments (p1,p2) and (p3,p4).
+    /// </summary>
+    private static float SquaredDistanceBetweenSegments(Vector2 p1, Vector2 p2, Vector2 p3, Vector2 p4)
+    {
+        // Check all four closest-point-on-segment combinations and take the minimum.
+        float d1 = (ClosestPointOnSegment(p1, p3, p4) - p1).sqrMagnitude;
+        float d2 = (ClosestPointOnSegment(p2, p3, p4) - p2).sqrMagnitude;
+        float d3 = (ClosestPointOnSegment(p3, p1, p2) - p3).sqrMagnitude;
+        float d4 = (ClosestPointOnSegment(p4, p1, p2) - p4).sqrMagnitude;
+        return Mathf.Min(Mathf.Min(d1, d2), Mathf.Min(d3, d4));
     }
 
     private void UpdateOrbHitStates()
@@ -1195,6 +1243,11 @@ public class ScreenWallFitController : MonoBehaviour
         public void SetTravelOffset(float localZOffset)
         {
             root.transform.localPosition = new Vector3(0f, 0f, localZOffset);
+        }
+
+        public void SetScale(float scale)
+        {
+            root.transform.localScale = new Vector3(scale, scale, 1f);
         }
 
         public void UpdateMesh(IReadOnlyList<Vector2> cutoutPolygon, float frontDepth, float thickness, Color color, Material materialOverride, Texture2D textureOverride, Vector2 textureTiling, float smoothness)

@@ -399,34 +399,17 @@ public class HumanoidPoseDriver : MonoBehaviour
 
     private void ApplyHipHeight()
     {
+        // With root Y now driven by Kinect hip height (in ApplyRootPosition),
+        // the hips bone only needs a small local correction to keep the mesh
+        // knee bend looking natural. Reset to the initial local position so
+        // the root-level drop does the heavy lifting.
         if (!driveHipHeight || hipsBone == null)
         {
             return;
         }
 
-        if (!TryGetAverageRawJoint(PoseJointId.LeftHip, PoseJointId.RightHip, out Vector3 hipCenter) ||
-            !TryGetAverageRawJoint(PoseJointId.LeftAnkle, PoseJointId.RightAnkle, out Vector3 ankleCenter))
-        {
-            return;
-        }
-
-        float legExtension = Mathf.Abs(hipCenter.y - ankleCenter.y);
-        if (legExtension < 0.01f)
-        {
-            return;
-        }
-
-        referenceLegExtension = Mathf.Max(referenceLegExtension, legExtension);
-        if (referenceLegExtension < 0.01f)
-        {
-            return;
-        }
-
-        float extensionRatio = Mathf.Clamp01(legExtension / referenceLegExtension);
-        float crouchAmount = 1f - extensionRatio;
-        Vector3 targetLocalPosition = hipsInitialLocalPosition + (Vector3.down * (crouchAmount * maxHipDrop));
         float blend = 1f - Mathf.Exp(-hipHeightResponsiveness * Time.deltaTime);
-        hipsBone.localPosition = Vector3.Lerp(hipsBone.localPosition, targetLocalPosition, blend);
+        hipsBone.localPosition = Vector3.Lerp(hipsBone.localPosition, hipsInitialLocalPosition, blend);
     }
 
     private void ApplyRootPosition()
@@ -451,27 +434,17 @@ public class HumanoidPoseDriver : MonoBehaviour
 
         Vector3 hipDelta = hipCenter - referenceHipCenter;
 
-        // Lock horizontal position: the avatar stays at its initial world
-        // position so that its viewport footprint is constant regardless of
-        // the player's distance from the sensor or lateral movement. Only
-        // vertical adjustments (height / foot grounding) are applied.
-        float targetY = avatarRootInitialPosition.y;
-        if (driveRootHeight)
-        {
-            targetY += hipDelta.y * rootPositionScale.y;
-        }
+        // Drive root from Kinect hip delta on all axes so the character
+        // can walk around and crouching lowers the whole avatar.
+        Vector3 horizontalOffset = (avatarRootInitialRight * (hipDelta.x * rootPositionScale.x)) +
+                                   (avatarRootInitialForward * (hipDelta.z * rootPositionScale.z));
 
-        if (keepFeetGrounded && hasFootCenter)
-        {
-            float footHeightDelta = Mathf.Clamp((footCenter.y - referenceFootHeight) * rootPositionScale.y, -maxFootHeightOffset, maxFootHeightOffset);
-            float floorHeight = avatarRootInitialPosition.y + footHeightDelta;
-            targetY = Mathf.Max(targetY, floorHeight);
-        }
+        float targetY = avatarRootInitialPosition.y + hipDelta.y * rootPositionScale.y;
 
         Vector3 targetPosition = new Vector3(
-            avatarRootInitialPosition.x,
+            avatarRootInitialPosition.x + horizontalOffset.x,
             targetY,
-            avatarRootInitialPosition.z);
+            avatarRootInitialPosition.z + horizontalOffset.z);
 
         float blend = 1f - Mathf.Exp(-rootPositionResponsiveness * Time.deltaTime);
         avatarRoot.position = Vector3.Lerp(avatarRoot.position, targetPosition, blend);
