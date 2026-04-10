@@ -33,6 +33,16 @@ public class ScreenWallFitController : MonoBehaviour
     [SerializeField] private Vector2 wallTextureTiling = new Vector2(0.45f, 0.45f);
     [SerializeField, Range(0f, 1f)] private float wallSmoothness = 0.15f;
 
+    [Header("Evaluation Camera (Isometric Mode)")]
+    [Tooltip("Distance of the front-facing evaluation camera from the avatar center.")]
+    [SerializeField, Min(0.5f)] private float evaluationCameraDistance = 3.5f;
+    [Tooltip("Field of view for the evaluation camera.")]
+    [SerializeField, Range(20f, 80f)] private float evaluationCameraFOV = 40f;
+    [Tooltip("Height offset of the evaluation camera above the avatar root.")]
+    [SerializeField, Min(0f)] private float evaluationCameraHeightOffset = 1f;
+    [Tooltip("How far away walls spawn before approaching the character.")]
+    [SerializeField, Min(1f)] private float wallApproachDistance = 10f;
+
     [Header("Scoring")]
     [SerializeField, Range(0f, 0.08f)] private float fitPadding = 0.015f;
     [SerializeField, Range(0.5f, 2f)] private float orbRadiusMultiplier = 1f;
@@ -57,6 +67,7 @@ public class ScreenWallFitController : MonoBehaviour
     private readonly List<bool> orbHitStates = new List<bool>(8);
     private readonly Rect fullScreenRect = new Rect(0f, 0f, 1f, 1f);
 
+    private Camera evaluationCamera;
     private Rect currentCutoutRect;
     private Rect targetCutoutRect;
     private RuntimeOverlay overlay;
@@ -107,10 +118,32 @@ public class ScreenWallFitController : MonoBehaviour
             gameManager = FindFirstObjectByType<GameManager>();
         }
 
+        CreateEvaluationCamera();
+        autoAlignToShapeReference = false;
         EnsureOverlay();
         RefreshShapeLibrary();
         CacheTrackedSegments();
         overlay.SetVisible(false);
+    }
+
+    private void CreateEvaluationCamera()
+    {
+        GameObject evalCamObj = new GameObject("EvaluationCamera");
+        evalCamObj.transform.SetParent(transform, false);
+        evaluationCamera = evalCamObj.AddComponent<Camera>();
+        evaluationCamera.orthographic = false;
+        evaluationCamera.fieldOfView = evaluationCameraFOV;
+        evaluationCamera.aspect = 16f / 9f;
+        evaluationCamera.nearClipPlane = 0.1f;
+        evaluationCamera.farClipPlane = 100f;
+        evaluationCamera.enabled = false;
+        evaluationCamera.cullingMask = 0;
+
+        Vector3 avatarCenter = targetAnimator != null
+            ? targetAnimator.transform.position + Vector3.up * evaluationCameraHeightOffset
+            : Vector3.up * evaluationCameraHeightOffset;
+        evalCamObj.transform.position = avatarCenter + Vector3.back * evaluationCameraDistance;
+        evalCamObj.transform.rotation = Quaternion.LookRotation(Vector3.forward);
     }
 
     private void Start()
@@ -179,9 +212,8 @@ public class ScreenWallFitController : MonoBehaviour
         CopyPolygon(startShapePolygon, animatedShapePolygon);
         stateTime = 0f;
         state = WallState.Shrinking;
-        float startDepth = Mathf.Max(targetCamera.nearClipPlane + 0.05f, wallStartDepth);
-        currentWallTargetDepth = Mathf.Max(startDepth + 0.1f, EstimateAvatarDepth() - (wallThickness * 0.5f));
-        currentWallStartOffset = startDepth - currentWallTargetDepth;
+        currentWallTargetDepth = Mathf.Max(evaluationCamera.nearClipPlane + 0.1f, EstimateAvatarDepth() - (wallThickness * 0.5f));
+        currentWallStartOffset = wallApproachDistance;
 
         if (useThreeDimensionalWall)
         {
@@ -226,7 +258,7 @@ public class ScreenWallFitController : MonoBehaviour
             return false;
         }
 
-        if (targetCamera == null)
+        if (targetCamera == null || evaluationCamera == null)
         {
             Debug.LogWarning("[ScreenWallFitController] No Camera assigned.");
             state = WallState.Idle;
@@ -495,7 +527,7 @@ public class ScreenWallFitController : MonoBehaviour
             {
                 float t = samples == 1 ? 0f : sampleIndex / (float)(samples - 1);
                 Vector3 worldPoint = Vector3.Lerp(segment.start.position, segment.end.position, t);
-                Vector3 viewportPoint = targetCamera.WorldToViewportPoint(worldPoint);
+                Vector3 viewportPoint = evaluationCamera.WorldToViewportPoint(worldPoint);
 
                 if (viewportPoint.z <= 0f)
                 {
@@ -527,7 +559,7 @@ public class ScreenWallFitController : MonoBehaviour
             {
                 float t = samples == 1 ? 0f : sampleIndex / (float)(samples - 1);
                 Vector3 worldPoint = Vector3.Lerp(segment.start.position, segment.end.position, t);
-                Vector3 viewportPoint = targetCamera.WorldToViewportPoint(worldPoint);
+                Vector3 viewportPoint = evaluationCamera.WorldToViewportPoint(worldPoint);
 
                 if (viewportPoint.z <= 0f)
                 {
@@ -584,7 +616,7 @@ public class ScreenWallFitController : MonoBehaviour
             {
                 float t = samples == 1 ? 0f : sampleIndex / (float)(samples - 1);
                 Vector3 worldPoint = Vector3.Lerp(segment.start.position, segment.end.position, t);
-                Vector3 viewportPoint = targetCamera.WorldToViewportPoint(worldPoint);
+                Vector3 viewportPoint = evaluationCamera.WorldToViewportPoint(worldPoint);
                 if (viewportPoint.z <= 0f)
                 {
                     continue;
@@ -691,12 +723,12 @@ public class ScreenWallFitController : MonoBehaviour
             return;
         }
 
-        runtimeWall = new RuntimeWall(targetCamera, transform);
+        runtimeWall = new RuntimeWall(evaluationCamera, transform);
     }
 
     private float EstimateAvatarDepth()
     {
-        if (targetCamera == null || targetAnimator == null)
+        if (evaluationCamera == null || targetAnimator == null)
         {
             return wallStartDepth + wallThickness + 1f;
         }
@@ -722,8 +754,8 @@ public class ScreenWallFitController : MonoBehaviour
                 continue;
             }
 
-            Vector3 localPoint = targetCamera.transform.InverseTransformPoint(bone.position);
-            if (localPoint.z <= targetCamera.nearClipPlane)
+            Vector3 localPoint = evaluationCamera.transform.InverseTransformPoint(bone.position);
+            if (localPoint.z <= evaluationCamera.nearClipPlane)
             {
                 continue;
             }
@@ -826,7 +858,8 @@ public class ScreenWallFitController : MonoBehaviour
 
     private void AlignAvatarToShapeReference(WallShapeData shape)
     {
-        if (!shape.HasReferenceAvatarBounds || targetAnimator == null || targetCamera == null)
+        Camera evalCam = evaluationCamera != null ? evaluationCamera : targetCamera;
+        if (!shape.HasReferenceAvatarBounds || targetAnimator == null || evalCam == null)
         {
             return;
         }
@@ -839,28 +872,28 @@ public class ScreenWallFitController : MonoBehaviour
 
         for (int iteration = 0; iteration < 3; iteration++)
         {
-            if (!TryGetAvatarViewportBounds(targetAnimator, targetCamera, out Rect currentBounds))
+            if (!TryGetAvatarViewportBounds(targetAnimator, evalCam, out Rect currentBounds))
             {
                 return;
             }
 
             float currentHeight = Mathf.Max(0.0001f, currentBounds.height);
             float targetHeight = Mathf.Max(0.0001f, shape.ReferenceAvatarViewportBounds.height);
-            float depth = Vector3.Dot(targetAnimator.transform.position - targetCamera.transform.position, targetCamera.transform.forward);
-            float desiredDepth = Mathf.Max(targetCamera.nearClipPlane + 0.25f, depth * (currentHeight / targetHeight));
+            float depth = Vector3.Dot(targetAnimator.transform.position - evalCam.transform.position, evalCam.transform.forward);
+            float desiredDepth = Mathf.Max(evalCam.nearClipPlane + 0.25f, depth * (currentHeight / targetHeight));
             float depthDelta = desiredDepth - depth;
-            playerRoot.position += targetCamera.transform.forward * depthDelta;
+            playerRoot.position += evalCam.transform.forward * depthDelta;
 
-            if (!TryGetAvatarViewportBounds(targetAnimator, targetCamera, out currentBounds))
+            if (!TryGetAvatarViewportBounds(targetAnimator, evalCam, out currentBounds))
             {
                 return;
             }
 
-            float alignedDepth = Vector3.Dot(targetAnimator.transform.position - targetCamera.transform.position, targetCamera.transform.forward);
+            float alignedDepth = Vector3.Dot(targetAnimator.transform.position - evalCam.transform.position, evalCam.transform.forward);
             Vector2 currentCenter = currentBounds.center;
             Vector2 desiredCenter = shape.ReferenceAvatarViewportBounds.center;
-            Vector3 currentWorldCenter = targetCamera.ViewportToWorldPoint(new Vector3(currentCenter.x, currentCenter.y, alignedDepth));
-            Vector3 desiredWorldCenter = targetCamera.ViewportToWorldPoint(new Vector3(currentCenter.x, desiredCenter.y, alignedDepth));
+            Vector3 currentWorldCenter = evalCam.ViewportToWorldPoint(new Vector3(currentCenter.x, currentCenter.y, alignedDepth));
+            Vector3 desiredWorldCenter = evalCam.ViewportToWorldPoint(new Vector3(currentCenter.x, desiredCenter.y, alignedDepth));
             float yDelta = desiredWorldCenter.y - currentWorldCenter.y;
             playerRoot.position += Vector3.up * yDelta;
         }

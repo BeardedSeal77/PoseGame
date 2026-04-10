@@ -450,9 +450,11 @@ public class HumanoidPoseDriver : MonoBehaviour
         }
 
         Vector3 hipDelta = hipCenter - referenceHipCenter;
-        Vector3 horizontalOffset = (avatarRootInitialRight * (hipDelta.x * rootPositionScale.x)) +
-                                   (avatarRootInitialForward * (hipDelta.z * rootPositionScale.z));
 
+        // Lock horizontal position: the avatar stays at its initial world
+        // position so that its viewport footprint is constant regardless of
+        // the player's distance from the sensor or lateral movement. Only
+        // vertical adjustments (height / foot grounding) are applied.
         float targetY = avatarRootInitialPosition.y;
         if (driveRootHeight)
         {
@@ -467,9 +469,9 @@ public class HumanoidPoseDriver : MonoBehaviour
         }
 
         Vector3 targetPosition = new Vector3(
-            avatarRootInitialPosition.x + horizontalOffset.x,
+            avatarRootInitialPosition.x,
             targetY,
-            avatarRootInitialPosition.z + horizontalOffset.z);
+            avatarRootInitialPosition.z);
 
         float blend = 1f - Mathf.Exp(-rootPositionResponsiveness * Time.deltaTime);
         avatarRoot.position = Vector3.Lerp(avatarRoot.position, targetPosition, blend);
