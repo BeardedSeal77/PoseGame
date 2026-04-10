@@ -14,6 +14,7 @@ public class PolygonWallShapeAsset : ScriptableObject
     };
 
     [SerializeField, Min(0.05f)] private float shrinkDuration = 2.5f;
+    [SerializeField, Range(1, 5)] private int difficulty = 3;
     [SerializeField] private List<WallOrbTargetData> orbTargets = new List<WallOrbTargetData>();
     [SerializeField] private bool hasReferenceAvatarBounds;
     [FormerlySerializedAs("referenceAvatarViewportBounds")]
@@ -21,12 +22,14 @@ public class PolygonWallShapeAsset : ScriptableObject
 
     public IReadOnlyList<Vector2> Vertices => vertices;
     public float ShrinkDuration => shrinkDuration;
+    public int Difficulty => difficulty;
     public IReadOnlyList<WallOrbTargetData> OrbTargets => orbTargets;
     public bool HasReferenceAvatarBounds => hasReferenceAvatarBounds;
     public Rect ReferenceAvatarBounds => referenceAvatarBounds;
 
-    public void SetData(IReadOnlyList<Vector2> sourceVertices, float duration, IReadOnlyList<WallOrbTargetData> sourceOrbTargets = null, Rect? sourceReferenceAvatarBounds = null)
+    public void SetData(IReadOnlyList<Vector2> sourceVertices, float duration, int shapeDifficulty = 3, IReadOnlyList<WallOrbTargetData> sourceOrbTargets = null, Rect? sourceReferenceAvatarBounds = null)
     {
+        difficulty = Mathf.Clamp(shapeDifficulty, 1, 5);
         vertices.Clear();
         orbTargets.Clear();
 

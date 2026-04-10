@@ -432,7 +432,7 @@ public class ScreenWallFitController : MonoBehaviour
                 metricRect = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
             }
 
-            loadedShapes.Add(new WallShapeData(shape.name, metricRect, shape.ShrinkDuration, BuildRectPolygonArray(metricRect), Array.Empty<WallOrbTargetData>(), false, default));
+            loadedShapes.Add(new WallShapeData(shape.name, metricRect, shape.ShrinkDuration, 3, BuildRectPolygonArray(metricRect), Array.Empty<WallOrbTargetData>(), false, default));
         }
 
         PolygonWallShapeAsset[] polygonShapes = Resources.LoadAll<PolygonWallShapeAsset>(normalizedFolder);
@@ -471,7 +471,7 @@ public class ScreenWallFitController : MonoBehaviour
                 refBounds = Rect.MinMaxRect(rMin.x, rMin.y, rMax.x, rMax.y);
             }
 
-            loadedShapes.Add(new WallShapeData(shape.name, BuildBounds(vertices), shape.ShrinkDuration, vertices, orbTargets, shape.HasReferenceAvatarBounds, refBounds));
+            loadedShapes.Add(new WallShapeData(shape.name, BuildBounds(vertices), shape.ShrinkDuration, shape.Difficulty, vertices, orbTargets, shape.HasReferenceAvatarBounds, refBounds));
         }
 
         loadedShapes.Sort((a, b) => string.CompareOrdinal(a.Name, b.Name));
@@ -495,12 +495,31 @@ public class ScreenWallFitController : MonoBehaviour
             remainingShapes.AddRange(loadedShapes);
         }
 
-        int selectedIndex = UnityEngine.Random.Range(0, remainingShapes.Count);
+        // Difficulty-weighted selection: prefer shapes matching the current
+        // target difficulty based on elapsed game time.
+        float elapsedRatio = 0f;
+        if (gameManager == null)
+        {
+            gameManager = GameManager.Instance;
+        }
+
+        if (gameManager != null)
+        {
+            elapsedRatio = Mathf.Clamp01(gameManager.GameElapsedTime / Mathf.Max(1f, gameManager.GameDuration));
+        }
+
+        float targetDifficulty = 1f + elapsedRatio * 4f;
+        int selectedIndex = SelectWeightedIndex(remainingShapes, targetDifficulty);
         WallShapeData selectedShape = remainingShapes[selectedIndex];
         remainingShapes.RemoveAt(selectedIndex);
 
         targetCutoutRect = selectedShape.Bounds;
-        currentShrinkDuration = selectedShape.ShrinkDuration;
+
+        // Speed scaling: walls arrive faster as the game progresses.
+        // Exponential curve ramps gently at first, aggressively near the end.
+        float speedFactor = 1f + elapsedRatio * elapsedRatio * 4f;
+        currentShrinkDuration = Mathf.Max(0.4f, selectedShape.ShrinkDuration / speedFactor);
+
         targetShapePolygon.Clear();
         targetShapePolygon.AddRange(selectedShape.PolygonVertices);
         activeOrbTargets.Clear();
@@ -517,9 +536,31 @@ public class ScreenWallFitController : MonoBehaviour
         }
 
         Rect bounds = selectedShape.Bounds;
-        Debug.Log($"[ScreenWallFitController] Selected wall shape '{selectedShape.Name}' with {selectedShape.PolygonVertices.Length} vertices. Metric bounds: x[{bounds.xMin:F2}..{bounds.xMax:F2}] y[{bounds.yMin:F2}..{bounds.yMax:F2}]");
+        Debug.Log($"[ScreenWallFitController] Selected '{selectedShape.Name}' (diff={selectedShape.Difficulty}, target={targetDifficulty:F1}, speed={speedFactor:F1}x). Bounds: x[{bounds.xMin:F2}..{bounds.xMax:F2}] y[{bounds.yMin:F2}..{bounds.yMax:F2}]");
 
         return true;
+    }
+
+    private static int SelectWeightedIndex(IReadOnlyList<WallShapeData> shapes, float targetDifficulty)
+    {
+        float totalWeight = 0f;
+        for (int index = 0; index < shapes.Count; index++)
+        {
+            totalWeight += 1f / (1f + Mathf.Abs(shapes[index].Difficulty - targetDifficulty));
+        }
+
+        float roll = UnityEngine.Random.Range(0f, totalWeight);
+        float accumulated = 0f;
+        for (int index = 0; index < shapes.Count; index++)
+        {
+            accumulated += 1f / (1f + Mathf.Abs(shapes[index].Difficulty - targetDifficulty));
+            if (roll <= accumulated)
+            {
+                return index;
+            }
+        }
+
+        return shapes.Count - 1;
     }
 
     private static string NormalizeResourcesFolder(string folder)
@@ -1545,11 +1586,12 @@ public class ScreenWallFitController : MonoBehaviour
 
     private sealed class WallShapeData
     {
-        public WallShapeData(string name, Rect bounds, float shrinkDuration, Vector2[] polygonVertices, WallOrbTargetData[] orbTargets, bool hasReferenceAvatarBounds, Rect referenceAvatarBounds)
+        public WallShapeData(string name, Rect bounds, float shrinkDuration, int difficulty, Vector2[] polygonVertices, WallOrbTargetData[] orbTargets, bool hasReferenceAvatarBounds, Rect referenceAvatarBounds)
         {
             Name = name;
             Bounds = bounds;
             ShrinkDuration = shrinkDuration;
+            Difficulty = Mathf.Clamp(difficulty, 1, 5);
             PolygonVertices = polygonVertices;
             OrbTargets = orbTargets ?? Array.Empty<WallOrbTargetData>();
             HasReferenceAvatarBounds = hasReferenceAvatarBounds;
@@ -1559,6 +1601,7 @@ public class ScreenWallFitController : MonoBehaviour
         public string Name { get; }
         public Rect Bounds { get; }
         public float ShrinkDuration { get; }
+        public int Difficulty { get; }
         public Vector2[] PolygonVertices { get; }
         public WallOrbTargetData[] OrbTargets { get; }
         public bool HasReferenceAvatarBounds { get; }

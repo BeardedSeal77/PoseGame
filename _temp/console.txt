@@ -1,37 +1,67 @@
+[KinectBodyTracker] Kinect runtime loaded, but the physical sensor is unavailable.
+UnityEngine.Debug:LogWarning (object)
+KinectBodyTracker:StartTracking () (at Assets/Scripts/Runtime/Kinect/KinectBodyTracker.cs:101)
+KinectBodyTracker:OnEnable () (at Assets/Scripts/Runtime/Kinect/KinectBodyTracker.cs:31)
+
+[GameManager] Some UI panels are not assigned. hudScreen=False, startScreen=True, gameOverScreen=True, settingsScreen=False
+UnityEngine.Debug:LogWarning (object)
+GameManager:EnsureRuntimeUi (bool) (at Assets/Scripts/GameManager.cs:552)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:127)
+
 [GameManager] Wired StartGame to 'Play'
 UnityEngine.Debug:Log (object)
-GameManager:BindButtons () (at Assets/Scripts/GameManager.cs:153)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:117)
+GameManager:BindButtons () (at Assets/Scripts/GameManager.cs:170)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:129)
 
 [GameManager] Wired RestartGame to 'Restart'
 UnityEngine.Debug:Log (object)
-GameManager:BindButtons () (at Assets/Scripts/GameManager.cs:160)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:117)
+GameManager:BindButtons () (at Assets/Scripts/GameManager.cs:177)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:129)
 
 [GameManager] Wired QuitGame to 'Quit'
 UnityEngine.Debug:Log (object)
-GameManager:BindButtons () (at Assets/Scripts/GameManager.cs:167)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:117)
+GameManager:BindButtons () (at Assets/Scripts/GameManager.cs:184)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:129)
 
 [GameManager] startScreen: StartScreen
 UnityEngine.Debug:Log (object)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:123)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:135)
 
 [GameManager] gameOverScreen: EndScreen
 UnityEngine.Debug:Log (object)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:124)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:136)
 
 [GameManager] startButton: Play
 UnityEngine.Debug:Log (object)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:125)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:137)
 
 [GameManager] restartButton: Restart
 UnityEngine.Debug:Log (object)
-GameManager:Start () (at Assets/Scripts/GameManager.cs:126)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:138)
 
-[ScreenWallFitController] Selected wall shape 'shape_3' with 4 vertices. Metric bounds: x[-0.50..0.45] y[-0.15..2.05]
+[GameManager] scoreCounterText: Text (TMP)
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:520)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:139)
+
+[GameManager] scorePanel: Score
+UnityEngine.Debug:Log (object)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:140)
+
+[GameManager] gameOverSummaryText: NULL
+UnityEngine.Debug:Log (object)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:141)
+
+[GameManager] finalScoreText: NULL
+UnityEngine.Debug:Log (object)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:142)
+
+[GameManager] hudText: NULL
+UnityEngine.Debug:Log (object)
+GameManager:Start () (at Assets/Scripts/GameManager.cs:143)
+
+[ScreenWallFitController] Selected 'shape_3' (diff=3, target=1.0, speed=1.0x). Bounds: x[-0.50..0.45] y[-0.15..2.05]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
 ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
 ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
 ScreenWallFitController:Start () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:156)
@@ -48,64 +78,59 @@ KinectBodyTracker:OnSensorAvailabilityChanged (object,Windows.Kinect.IsAvailable
 Windows.Kinect.KinectSensor/<>c__DisplayClass46_1:<Windows_Kinect_IsAvailableChangedEventArgs_Delegate_Handler>b__0 () (at Assets/Standard Assets/Kinect/KinectSensor.cs:291)
 Helper.EventPump:Update () (at Assets/Standard Assets/EventPump.cs:52)
 
-[ScreenWallFitController] Selected wall shape 'shape_4' with 8 vertices. Metric bounds: x[-1.15..0.45] y[-0.20..2.10]
+[ScreenWallFitController] Selected 'shape_2' (diff=3, target=1.4, speed=1.0x). Bounds: x[-1.15..1.15] y[-0.15..1.95]
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:520)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
 ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
 ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
-GameManager/<DelayedWallStart>d__79:MoveNext () (at Assets/Scripts/GameManager.cs:420)
+GameManager/<DelayedWallStart>d__90:MoveNext () (at Assets/Scripts/GameManager.cs:446)
 UnityEngine.SetupCoroutine:InvokeMoveNext (System.Collections.IEnumerator,intptr)
 
-[WallFit] Evaluating 9 joints against polygon y[-0.20..2.10] x[-1.15..0.45]
-  FAIL CC_Base_NeckTwist02 (0.03, 1.36)
-  FAIL CC_Base_Spine01 (0.04, 0.94)
-  FAIL CC_Base_Hip (0.04, 0.80)
-  FAIL CC_Base_L_Upperarm (0.24, 1.09)
-  FAIL CC_Base_R_Upperarm (-0.19, 1.13)
-  FAIL CC_Base_L_Forearm (0.27, 0.91)
-  FAIL CC_Base_R_Forearm (-0.38, 1.11)
-  FAIL CC_Base_L_Hand (0.25, 0.69)
-  FAIL CC_Base_R_Hand (-0.60, 1.10)
+[WallFit] Evaluating 9 joints against polygon y[-0.15..1.95] x[-1.15..1.15]
+  OK CC_Base_NeckTwist02 (-0.08, 1.37)
+  OK CC_Base_Spine01 (-0.07, 0.95)
+  OK CC_Base_Hip (-0.08, 0.81)
+  OK CC_Base_L_Upperarm (0.13, 1.11)
+  OK CC_Base_R_Upperarm (-0.29, 1.11)
+  OK CC_Base_L_Forearm (0.16, 0.92)
+  OK CC_Base_R_Forearm (-0.30, 0.92)
+  OK CC_Base_L_Hand (0.16, 0.70)
+  OK CC_Base_R_Hand (-0.27, 0.71)
 
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:581)
-ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
 ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[ScreenWallFitController] Pose failed. Losing one life.
+Wall cleared. Score: 10, Orbs: 0/0, Walls: 1
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:326)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[GameManager] Ghost mode — life loss skipped.
+[ScreenWallFitController] Selected 'shape_4' (diff=3, target=1.9, speed=1.2x). Bounds: x[-1.15..0.45] y[-0.20..2.10]
 UnityEngine.Debug:Log (object)
-GameManager:LoseLife () (at Assets/Scripts/GameManager.cs:273)
-ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:327)
-ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
-
-[ScreenWallFitController] Selected wall shape 'shape_2' with 12 vertices. Metric bounds: x[-1.15..1.15] y[-0.15..1.95]
-UnityEngine.Debug:Log (object)
-ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:520)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
 ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
 ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
 ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
 
-[WallFit] Evaluating 9 joints against polygon y[-0.15..1.95] x[-1.15..1.15]
-  FAIL CC_Base_NeckTwist02 (0.04, 1.37)
-  OK CC_Base_Spine01 (0.04, 0.95)
-  OK CC_Base_Hip (0.04, 0.81)
-  OK CC_Base_L_Upperarm (0.26, 1.13)
-  OK CC_Base_R_Upperarm (-0.18, 1.14)
-  OK CC_Base_L_Forearm (0.44, 1.12)
-  OK CC_Base_R_Forearm (-0.37, 1.13)
-  OK CC_Base_L_Hand (0.64, 1.12)
-  OK CC_Base_R_Hand (-0.60, 1.13)
+[WallFit] Evaluating 9 joints against polygon y[-0.20..2.10] x[-1.15..0.45]
+  OK CC_Base_NeckTwist02 (-0.29, 1.32)
+  OK CC_Base_Spine01 (-0.15, 0.93)
+  OK CC_Base_Hip (-0.13, 0.80)
+  OK CC_Base_L_Upperarm (-0.01, 1.13)
+  OK CC_Base_R_Upperarm (-0.40, 1.02)
+  OK CC_Base_L_Forearm (0.11, 0.98)
+  OK CC_Base_R_Forearm (-0.46, 0.85)
+  OK CC_Base_L_Hand (0.11, 0.75)
+  FAIL CC_Base_R_Hand (-0.56, 0.64)
 
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:581)
-ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
 ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
@@ -116,87 +141,285 @@ ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallF
 
 [GameManager] Ghost mode — life loss skipped.
 UnityEngine.Debug:Log (object)
-GameManager:LoseLife () (at Assets/Scripts/GameManager.cs:273)
+GameManager:LoseLife () (at Assets/Scripts/GameManager.cs:293)
 ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:327)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[ScreenWallFitController] Selected wall shape 'shape_1' with 13 vertices. Metric bounds: x[-0.95..0.85] y[-0.10..2.00]
+[ScreenWallFitController] Selected 'shape_1' (diff=3, target=2.4, speed=1.5x). Bounds: x[-0.95..0.85] y[-0.10..2.00]
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:520)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
 ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
 ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
 ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
 
 [WallFit] Evaluating 9 joints against polygon y[-0.10..2.00] x[-0.95..0.85]
-  FAIL CC_Base_NeckTwist02 (0.05, 1.38)
-  FAIL CC_Base_Spine01 (0.04, 0.95)
-  FAIL CC_Base_Hip (0.04, 0.81)
-  FAIL CC_Base_L_Upperarm (0.25, 1.11)
-  FAIL CC_Base_R_Upperarm (-0.19, 1.17)
-  FAIL CC_Base_L_Forearm (0.36, 0.96)
-  FAIL CC_Base_R_Forearm (-0.35, 1.27)
-  FAIL CC_Base_L_Hand (0.48, 0.79)
-  FAIL CC_Base_R_Hand (-0.52, 1.38)
+  OK CC_Base_NeckTwist02 (-0.07, 1.37)
+  OK CC_Base_Spine01 (-0.07, 0.95)
+  OK CC_Base_Hip (-0.07, 0.81)
+  OK CC_Base_L_Upperarm (0.14, 1.11)
+  OK CC_Base_R_Upperarm (-0.28, 1.12)
+  OK CC_Base_L_Forearm (0.17, 0.92)
+  OK CC_Base_R_Forearm (-0.30, 0.93)
+  OK CC_Base_L_Hand (0.16, 0.70)
+  OK CC_Base_R_Hand (-0.26, 0.71)
 
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:581)
-ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
 ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[ScreenWallFitController] Pose failed. Losing one life.
+Wall cleared. Score: 20, Orbs: 0/0, Walls: 2
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:326)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[GameManager] Ghost mode — life loss skipped.
+[ScreenWallFitController] Selected 'shape_1' (diff=3, target=2.9, speed=1.9x). Bounds: x[-0.95..0.85] y[-0.10..2.00]
 UnityEngine.Debug:Log (object)
-GameManager:LoseLife () (at Assets/Scripts/GameManager.cs:273)
-ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:327)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
+ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
+ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.10..2.00] x[-0.95..0.85]
+  OK CC_Base_NeckTwist02 (-0.03, 1.37)
+  OK CC_Base_Spine01 (-0.03, 0.95)
+  OK CC_Base_Hip (-0.04, 0.81)
+  OK CC_Base_L_Upperarm (0.18, 1.10)
+  OK CC_Base_R_Upperarm (-0.25, 1.12)
+  OK CC_Base_L_Forearm (0.20, 0.91)
+  OK CC_Base_R_Forearm (-0.27, 0.93)
+  OK CC_Base_L_Hand (0.19, 0.70)
+  OK CC_Base_R_Hand (-0.24, 0.72)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[ScreenWallFitController] Selected wall shape 'shape_4' with 8 vertices. Metric bounds: x[-1.15..0.45] y[-0.20..2.10]
+Wall cleared. Score: 30, Orbs: 0/0, Walls: 3
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:520)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+[ScreenWallFitController] Selected 'shape_3' (diff=3, target=3.3, speed=2.3x). Bounds: x[-0.50..0.45] y[-0.15..2.05]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
+ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
+ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.15..2.05] x[-0.50..0.45]
+  OK CC_Base_NeckTwist02 (-0.04, 1.37)
+  OK CC_Base_Spine01 (-0.04, 0.95)
+  OK CC_Base_Hip (-0.05, 0.81)
+  OK CC_Base_L_Upperarm (0.17, 1.10)
+  OK CC_Base_R_Upperarm (-0.26, 1.12)
+  OK CC_Base_L_Forearm (0.19, 0.92)
+  OK CC_Base_R_Forearm (-0.29, 0.93)
+  OK CC_Base_L_Hand (0.18, 0.70)
+  OK CC_Base_R_Hand (-0.20, 0.76)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+Wall cleared. Score: 40, Orbs: 0/0, Walls: 4
+UnityEngine.Debug:Log (object)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+[ScreenWallFitController] Selected 'shape_4' (diff=3, target=3.6, speed=2.7x). Bounds: x[-1.15..0.45] y[-0.20..2.10]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
 ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
 ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
 ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
 
 [WallFit] Evaluating 9 joints against polygon y[-0.20..2.10] x[-1.15..0.45]
-  FAIL CC_Base_NeckTwist02 (0.05, 1.36)
-  FAIL CC_Base_Spine01 (0.04, 0.94)
-  FAIL CC_Base_Hip (0.04, 0.80)
-  FAIL CC_Base_L_Upperarm (0.25, 1.09)
-  FAIL CC_Base_R_Upperarm (-0.19, 1.14)
-  FAIL CC_Base_L_Forearm (0.28, 0.90)
-  FAIL CC_Base_R_Forearm (-0.37, 1.13)
-  FAIL CC_Base_L_Hand (0.25, 0.69)
-  FAIL CC_Base_R_Hand (-0.59, 1.13)
+  OK CC_Base_NeckTwist02 (-0.03, 1.37)
+  OK CC_Base_Spine01 (-0.05, 0.94)
+  OK CC_Base_Hip (-0.06, 0.81)
+  OK CC_Base_L_Upperarm (0.15, 1.09)
+  OK CC_Base_R_Upperarm (-0.24, 1.11)
+  OK CC_Base_L_Forearm (0.18, 0.90)
+  OK CC_Base_R_Forearm (-0.22, 0.94)
+  OK CC_Base_L_Hand (0.18, 0.68)
+  OK CC_Base_R_Hand (-0.12, 1.15)
 
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:581)
-ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
 ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[ScreenWallFitController] Pose failed. Losing one life.
+Wall cleared. Score: 50, Orbs: 0/0, Walls: 5
 UnityEngine.Debug:Log (object)
-ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:326)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 
-[GameManager] Ghost mode — life loss skipped.
+[ScreenWallFitController] Selected 'shape_2' (diff=3, target=4.0, speed=3.2x). Bounds: x[-1.15..1.15] y[-0.15..1.95]
 UnityEngine.Debug:Log (object)
-GameManager:LoseLife () (at Assets/Scripts/GameManager.cs:273)
-ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:327)
-ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
-
-[ScreenWallFitController] Selected wall shape 'shape_3' with 4 vertices. Metric bounds: x[-0.50..0.45] y[-0.15..2.05]
-UnityEngine.Debug:Log (object)
-ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:520)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
 ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
 ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
 ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
 ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.15..1.95] x[-1.15..1.15]
+  OK CC_Base_NeckTwist02 (-0.05, 1.37)
+  OK CC_Base_Spine01 (-0.06, 0.95)
+  OK CC_Base_Hip (-0.07, 0.81)
+  OK CC_Base_L_Upperarm (0.14, 1.10)
+  OK CC_Base_R_Upperarm (-0.26, 1.12)
+  OK CC_Base_L_Forearm (0.17, 0.91)
+  OK CC_Base_R_Forearm (-0.25, 0.94)
+  OK CC_Base_L_Hand (0.17, 0.70)
+  OK CC_Base_R_Hand (-0.21, 1.17)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+Wall cleared. Score: 60, Orbs: 0/0, Walls: 6
+UnityEngine.Debug:Log (object)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+[ScreenWallFitController] Selected 'shape_1' (diff=3, target=4.3, speed=3.7x). Bounds: x[-0.95..0.85] y[-0.10..2.00]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
+ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
+ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.10..2.00] x[-0.95..0.85]
+  OK CC_Base_NeckTwist02 (-0.06, 1.37)
+  OK CC_Base_Spine01 (-0.06, 0.95)
+  OK CC_Base_Hip (-0.07, 0.81)
+  OK CC_Base_L_Upperarm (0.14, 1.10)
+  OK CC_Base_R_Upperarm (-0.27, 1.12)
+  OK CC_Base_L_Forearm (0.17, 0.91)
+  OK CC_Base_R_Forearm (-0.24, 0.94)
+  OK CC_Base_L_Hand (0.16, 0.70)
+  OK CC_Base_R_Hand (-0.24, 1.17)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+Wall cleared. Score: 70, Orbs: 0/0, Walls: 7
+UnityEngine.Debug:Log (object)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+[ScreenWallFitController] Selected 'shape_2' (diff=3, target=4.6, speed=4.2x). Bounds: x[-1.15..1.15] y[-0.15..1.95]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
+ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
+ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.15..1.95] x[-1.15..1.15]
+  OK CC_Base_NeckTwist02 (-0.06, 1.37)
+  OK CC_Base_Spine01 (-0.07, 0.95)
+  OK CC_Base_Hip (-0.08, 0.81)
+  OK CC_Base_L_Upperarm (0.13, 1.10)
+  OK CC_Base_R_Upperarm (-0.27, 1.12)
+  OK CC_Base_L_Forearm (0.16, 0.91)
+  OK CC_Base_R_Forearm (-0.25, 0.94)
+  OK CC_Base_L_Hand (0.16, 0.70)
+  OK CC_Base_R_Hand (-0.21, 1.17)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+Wall cleared. Score: 80, Orbs: 0/0, Walls: 8
+UnityEngine.Debug:Log (object)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+[ScreenWallFitController] Selected 'shape_4' (diff=3, target=4.9, speed=4.7x). Bounds: x[-1.15..0.45] y[-0.20..2.10]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
+ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
+ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.20..2.10] x[-1.15..0.45]
+  OK CC_Base_NeckTwist02 (-0.06, 1.37)
+  OK CC_Base_Spine01 (-0.06, 0.95)
+  OK CC_Base_Hip (-0.07, 0.81)
+  OK CC_Base_L_Upperarm (0.13, 1.10)
+  OK CC_Base_R_Upperarm (-0.27, 1.12)
+  OK CC_Base_L_Forearm (0.16, 0.91)
+  OK CC_Base_R_Forearm (-0.24, 0.94)
+  OK CC_Base_L_Hand (0.17, 0.69)
+  OK CC_Base_R_Hand (-0.20, 1.17)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+Wall cleared. Score: 90, Orbs: 0/0, Walls: 9
+UnityEngine.Debug:Log (object)
+GameManager:RegisterWallResult (bool,int,int) (at Assets/Scripts/GameManager.cs:278)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:336)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
+
+[GameManager] TriggerGameOver: didWin=True, Score=690, Lives=3, Walls=9
+UnityEngine.Debug:Log (object)
+GameManager:TriggerGameOver () (at Assets/Scripts/GameManager.cs:320)
+GameManager:Update () (at Assets/Scripts/GameManager.cs:213)
+
+[ScreenWallFitController] Selected 'shape_3' (diff=3, target=5.0, speed=5.0x). Bounds: x[-0.50..0.45] y[-0.15..2.05]
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:TrySelectNextShape () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:539)
+ScreenWallFitController:TryPrepareRun () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:245)
+ScreenWallFitController:BeginWall () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:203)
+ScreenWallFitController:UpdateLoopDelay () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:398)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:171)
+
+[WallFit] Evaluating 9 joints against polygon y[-0.15..2.05] x[-0.50..0.45]
+  OK CC_Base_NeckTwist02 (-0.05, 1.37)
+  OK CC_Base_Spine01 (-0.06, 0.95)
+  OK CC_Base_Hip (-0.07, 0.81)
+  OK CC_Base_L_Upperarm (0.14, 1.10)
+  OK CC_Base_R_Upperarm (-0.26, 1.12)
+  OK CC_Base_L_Forearm (0.17, 0.91)
+  OK CC_Base_R_Forearm (-0.24, 0.94)
+  OK CC_Base_L_Hand (0.17, 0.69)
+  OK CC_Base_R_Hand (-0.19, 1.17)
+
+UnityEngine.Debug:Log (object)
+ScreenWallFitController:EvaluateCurrentPoseAgainstPolygon () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:622)
+ScreenWallFitController:EvaluateCurrentPose () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:580)
+ScreenWallFitController:UpdateShrink () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:312)
+ScreenWallFitController:Update () (at Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs:165)
 

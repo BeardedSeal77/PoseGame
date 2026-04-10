@@ -36,6 +36,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
     [SerializeField, Min(1)] private int ikIterations = 8;
     [SerializeField, Min(0.001f)] private float silhouettePadding = 0.08f;
     [SerializeField, Min(0.05f)] private float shrinkDuration = 2.5f;
+    [SerializeField, Range(1, 5)] private int difficulty = 3;
     [SerializeField, Min(0f)] private float jointHandleVisualOffset = 0.12f;
 
     [Header("Targets")]
@@ -143,6 +144,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         }
 
         shrinkDuration = shapeAsset.ShrinkDuration;
+        difficulty = shapeAsset.Difficulty;
         EnsureMinimumVertexCount();
     }
 
@@ -154,7 +156,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         }
 
         Rect? referenceBounds = TryGetAvatarMetricBounds(out Rect metricBounds) ? metricBounds : null;
-        shapeAsset.SetData(polygonVertices, shrinkDuration, orbTargets, referenceBounds);
+        shapeAsset.SetData(polygonVertices, shrinkDuration, difficulty, orbTargets, referenceBounds);
     }
 
     public void EnsureTargetHandlesCreated()

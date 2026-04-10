@@ -53,9 +53,20 @@ public class GameManager : MonoBehaviour
     [Tooltip("Extra score awarded for each orb touched while clearing a wall.")]
     public int orbScore = 25;
 
+    [Tooltip("Bonus score per life remaining at game end.")]
+    public int livesBonus = 200;
+
     public int Score { get; private set; }
     public int ClearedWalls { get; private set; }
     public int CollectedOrbs { get; private set; }
+
+    [Header("Game Timer")]
+    [Tooltip("Maximum game duration in seconds. Game ends when time runs out.")]
+    public float gameDuration = 30f;
+
+    public float GameElapsedTime { get; private set; }
+    public float GameDuration => gameDuration;
+    public float GameTimeRemaining => Mathf.Max(0f, gameDuration - GameElapsedTime);
 
     [Header("UI Panels")]
     public GameObject hudScreen;
@@ -102,6 +113,7 @@ public class GameManager : MonoBehaviour
     public string gameOverSceneName = "EndScene";
 
     private bool wasPlayingBeforeSettings;
+    private bool didWin;
 
     private void Awake()
     {
@@ -124,6 +136,11 @@ public class GameManager : MonoBehaviour
         Debug.Log($"[GameManager] gameOverScreen: {(gameOverScreen != null ? gameOverScreen.name : "NULL")}");
         Debug.Log($"[GameManager] startButton: {(startButton != null ? startButton.name : "NULL")}");
         Debug.Log($"[GameManager] restartButton: {(restartButton != null ? restartButton.name : "NULL")}");
+        Debug.Log($"[GameManager] scoreCounterText: {(scoreCounterText != null ? scoreCounterText.name : "NULL")}");
+        Debug.Log($"[GameManager] scorePanel: {(scorePanel != null ? scorePanel.name : "NULL")}");
+        Debug.Log($"[GameManager] gameOverSummaryText: {(gameOverSummaryText != null ? gameOverSummaryText.name : "NULL")}");
+        Debug.Log($"[GameManager] finalScoreText: {(finalScoreText != null ? finalScoreText.name : "NULL")}");
+        Debug.Log($"[GameManager] hudText: {(hudText != null ? hudText.name : "NULL")}");
 
         // Initialize lives and speed
         ResetRunState();
@@ -187,18 +204,21 @@ public class GameManager : MonoBehaviour
 
         if (CurrentState == GameState.Playing)
         {
+            // Game timer
+            GameElapsedTime += Time.deltaTime;
+            if (GameElapsedTime >= gameDuration)
+            {
+                GameElapsedTime = gameDuration;
+                didWin = true;
+                TriggerGameOver();
+                return;
+            }
+
             // Gradually increase the speed over time, clamping it at maxSpeed
             if (currentSpeed < maxSpeed)
             {
-                // --- SMART CALCULATION ---
-                // Ratio of starting lives to current lives. 
-                // Mathf.Max(1, CurrentLives) ensures we never accidentally divide by zero if lives hit 0.
                 float lifeMultiplier = (float)startingLives / Mathf.Max(1, CurrentLives);
-
-                // Calculate the exact rate for this frame
                 float dynamicIncreaseRate = speedIncreaseRate * lifeMultiplier;
-
-                // Apply the increase
                 currentSpeed += dynamicIncreaseRate * gameSpeed * Time.deltaTime;
                 currentSpeed = Mathf.Min(currentSpeed, maxSpeed);
             }
@@ -294,11 +314,15 @@ public class GameManager : MonoBehaviour
     {
         if (CurrentState == GameState.GameOver) return;
 
+        // Apply lives bonus to final score.
+        Score += CurrentLives * livesBonus;
+
+        Debug.Log($"[GameManager] TriggerGameOver: didWin={didWin}, Score={Score}, Lives={CurrentLives}, Walls={ClearedWalls}");
+
         CurrentState = GameState.GameOver;
         StopAllCoroutines();
 
         // Let the wall finish its flash animation before showing the game-over screen.
-        // This avoids the red flash getting stuck on screen.
         StartCoroutine(GameOverAfterWallFinishes());
     }
 
@@ -386,6 +410,8 @@ public class GameManager : MonoBehaviour
         Score = 0;
         ClearedWalls = 0;
         CollectedOrbs = 0;
+        GameElapsedTime = 0f;
+        didWin = false;
         RefreshHud();
         RefreshMenuText();
     }
@@ -454,16 +480,19 @@ public class GameManager : MonoBehaviour
 
     private void RefreshHud()
     {
+        float remaining = GameTimeRemaining;
+        int seconds = Mathf.CeilToInt(remaining);
+
         // Individual counters (preferred)
         if (livesCounterText != null)
             livesCounterText.text = $"\u2665 {CurrentLives}";
 
         if (scoreCounterText != null)
-            scoreCounterText.text = $"Score: {Score}";
+            scoreCounterText.text = $"{Score}\n0:{seconds:D2}";
 
         // Legacy combined HUD text
         if (hudText != null)
-            hudText.text = $"Score {Score}\nLives {CurrentLives}\nWalls {ClearedWalls}\nOrbs {CollectedOrbs}";
+            hudText.text = $"Time {seconds}s\nScore {Score}\nLives {CurrentLives}\nWalls {ClearedWalls}";
     }
 
     private void RefreshMenuText()
@@ -472,10 +501,18 @@ public class GameManager : MonoBehaviour
             startPromptText.text = "POSE GAME";
 
         if (gameOverSummaryText != null)
-            gameOverSummaryText.text = $"GAME OVER\nScore: {Score}\nWalls: {ClearedWalls}\nOrbs: {CollectedOrbs}";
+        {
+            string header = didWin ? "You Win!" : "Game Over!";
+            int wallScore = ClearedWalls * wallClearScore + CollectedOrbs * orbScore;
+            int lifeScore = CurrentLives * livesBonus;
+            gameOverSummaryText.text = $"{header}\n\nWalls Cleared: {ClearedWalls} ({wallScore})\nLives Kept: {CurrentLives} ({lifeScore})\n\nFinal Score: {Score}";
+        }
 
         if (finalScoreText != null)
-            finalScoreText.text = $"Score: {Score}";
+        {
+            string finalHeader = didWin ? "You Win!" : "Game Over!";
+            finalScoreText.text = $"{finalHeader}\nScore: {Score}";
+        }
     }
 
     private void EnsureRuntimeUi(bool allowCreate)
