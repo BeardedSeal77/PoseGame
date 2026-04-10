@@ -3,32 +3,28 @@ using UnityEngine;
 [CreateAssetMenu(fileName = "RectangleWallShape", menuName = "PoseGame/Wall Fit/Rectangle Wall Shape")]
 public class RectangleWallShapeAsset : ScriptableObject
 {
-    [SerializeField] private Vector2 center = new Vector2(0.5f, 0.5f);
-    [SerializeField] private Vector2 size = new Vector2(0.28f, 0.72f);
+    [SerializeField] private Vector2 center = new Vector2(0f, 1.35f);
+    [SerializeField] private Vector2 size = new Vector2(1.3f, 1.96f);
     [SerializeField, Min(0.05f)] private float shrinkDuration = 2.5f;
 
     public float ShrinkDuration => shrinkDuration;
 
-    public Rect TargetViewportRect
+    public Rect TargetRect
     {
         get
         {
             Vector2 clampedSize = new Vector2(
-                Mathf.Clamp(size.x, 0.05f, 1f),
-                Mathf.Clamp(size.y, 0.05f, 1f));
+                Mathf.Max(0.1f, size.x),
+                Mathf.Max(0.1f, size.y));
 
-            Vector2 clampedCenter = new Vector2(
-                Mathf.Clamp(center.x, clampedSize.x * 0.5f, 1f - (clampedSize.x * 0.5f)),
-                Mathf.Clamp(center.y, clampedSize.y * 0.5f, 1f - (clampedSize.y * 0.5f)));
-
-            Vector2 min = clampedCenter - (clampedSize * 0.5f);
+            Vector2 min = center - (clampedSize * 0.5f);
             return new Rect(min, clampedSize);
         }
     }
 
     private void OnValidate()
     {
-        size.x = Mathf.Clamp(size.x, 0.05f, 1f);
-        size.y = Mathf.Clamp(size.y, 0.05f, 1f);
+        size.x = Mathf.Max(0.1f, size.x);
+        size.y = Mathf.Max(0.1f, size.y);
     }
 }

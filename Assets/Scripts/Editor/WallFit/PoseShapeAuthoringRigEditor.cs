@@ -7,8 +7,8 @@ using UnityEngine.Rendering;
 [CustomEditor(typeof(PoseShapeAuthoringRig))]
 public class PoseShapeAuthoringRigEditor : Editor
 {
-    private const float VertexSnapStep = 0.025f;
-    private const float VertexPickThreshold = 0.02f;
+    private const float VertexSnapStep = 0.05f;
+    private const float VertexPickThreshold = 0.05f;
     private const float RotateSensitivity = 0.35f;
 
     private readonly HashSet<int> selectedVertexIndices = new HashSet<int>();
@@ -18,7 +18,7 @@ public class PoseShapeAuthoringRigEditor : Editor
     private bool isDraggingVertices;
     private bool isMarqueeSelecting;
     private bool isRotatingPlayer;
-    private Vector2 dragStartViewportPoint;
+    private Vector2 dragStartMetricPoint;
     private Vector2 marqueeStart;
     private Vector2 marqueeEnd;
     private float rotateStartMouseX;
@@ -89,8 +89,8 @@ public class PoseShapeAuthoringRigEditor : Editor
         for (int index = 0; index < rig.PolygonVertices.Count; index++)
         {
             int nextIndex = (index + 1) % rig.PolygonVertices.Count;
-            if (rig.TryViewportToWorld(rig.PolygonVertices[index], out Vector3 a) &&
-                rig.TryViewportToWorld(rig.PolygonVertices[nextIndex], out Vector3 b))
+            if (rig.TryMetricToWorld(rig.PolygonVertices[index], out Vector3 a) &&
+                rig.TryMetricToWorld(rig.PolygonVertices[nextIndex], out Vector3 b))
             {
                 Handles.DrawAAPolyLine(4f, a, b);
             }
@@ -111,8 +111,8 @@ public class PoseShapeAuthoringRigEditor : Editor
         for (int index = 0; index < rig.PolygonVertices.Count; index++)
         {
             int nextIndex = (index + 1) % rig.PolygonVertices.Count;
-            if (rig.TryViewportToWorld(rig.PolygonVertices[index], out Vector3 a) &&
-                rig.TryViewportToWorld(rig.PolygonVertices[nextIndex], out Vector3 b))
+            if (rig.TryMetricToWorld(rig.PolygonVertices[index], out Vector3 a) &&
+                rig.TryMetricToWorld(rig.PolygonVertices[nextIndex], out Vector3 b))
             {
                 Handles.DrawAAPolyLine(4f, a, b);
             }
@@ -120,7 +120,7 @@ public class PoseShapeAuthoringRigEditor : Editor
 
         for (int index = 0; index < rig.PolygonVertices.Count; index++)
         {
-            if (!rig.TryViewportToWorld(rig.PolygonVertices[index], out Vector3 worldPoint))
+            if (!rig.TryMetricToWorld(rig.PolygonVertices[index], out Vector3 worldPoint))
             {
                 continue;
             }
@@ -176,10 +176,10 @@ public class PoseShapeAuthoringRigEditor : Editor
 
             EditorGUI.BeginChangeCheck();
             Vector3 movedPosition = Handles.FreeMoveHandle(worldPosition, handleSize * 0.9f, Vector3.zero, Handles.CircleHandleCap);
-            if (EditorGUI.EndChangeCheck() && rig.TryWorldToViewport(movedPosition, out Vector2 viewportPoint))
+            if (EditorGUI.EndChangeCheck() && rig.TryWorldToMetric(movedPosition, out Vector2 metricPoint))
             {
                 Undo.RecordObject(rig, "Move Orb Target");
-                rig.SetOrbTargetPosition(index, viewportPoint);
+                rig.SetOrbTargetPosition(index, metricPoint);
                 selectedOrbIndex = index;
                 EditorUtility.SetDirty(rig);
             }
@@ -247,9 +247,9 @@ public class PoseShapeAuthoringRigEditor : Editor
     {
         if (currentEvent.button == 0)
         {
-            if (TryGetViewportPointFromMouse(rig, currentEvent.mousePosition, out Vector2 viewportPoint))
+            if (TryGetMetricPointFromMouse(rig, currentEvent.mousePosition, out Vector2 metricPoint))
             {
-                int vertexIndex = GetClosestVertexIndex(rig, viewportPoint, VertexPickThreshold);
+                int vertexIndex = GetClosestVertexIndex(rig, metricPoint, VertexPickThreshold);
 
                 if (currentEvent.control)
                 {
@@ -280,7 +280,7 @@ public class PoseShapeAuthoringRigEditor : Editor
                         activeVertexIndex = vertexIndex;
                     }
 
-                    BeginVertexDrag(rig, viewportPoint, "Move Polygon Vertices");
+                    BeginVertexDrag(rig, metricPoint, "Move Polygon Vertices");
                     currentEvent.Use();
                     return;
                 }
@@ -291,12 +291,12 @@ public class PoseShapeAuthoringRigEditor : Editor
             return;
         }
 
-        if (currentEvent.button != 1 || !TryGetViewportPointFromMouse(rig, currentEvent.mousePosition, out Vector2 rightClickViewport))
+        if (currentEvent.button != 1 || !TryGetMetricPointFromMouse(rig, currentEvent.mousePosition, out Vector2 rightClickMetric))
         {
             return;
         }
 
-        int vertexToDelete = GetClosestVertexIndex(rig, rightClickViewport, VertexPickThreshold);
+        int vertexToDelete = GetClosestVertexIndex(rig, rightClickMetric, VertexPickThreshold);
         if (vertexToDelete >= 0)
         {
             if (rig.PolygonVertices.Count > 3)
@@ -312,7 +312,7 @@ public class PoseShapeAuthoringRigEditor : Editor
             return;
         }
 
-        int segmentIndex = GetClosestSegmentIndex(rig, rightClickViewport, VertexPickThreshold, out Vector2 projectedPoint);
+        int segmentIndex = GetClosestSegmentIndex(rig, rightClickMetric, VertexPickThreshold, out Vector2 projectedPoint);
         if (segmentIndex < 0)
         {
             return;
@@ -345,13 +345,13 @@ public class PoseShapeAuthoringRigEditor : Editor
             return;
         }
 
-        if (!TryGetViewportPointFromMouse(rig, currentEvent.mousePosition, out Vector2 currentViewportPoint))
+        if (!TryGetMetricPointFromMouse(rig, currentEvent.mousePosition, out Vector2 currentMetricPoint))
         {
             return;
         }
 
         Vector2 originalActivePosition = dragStartVertices[activeVertexIndex];
-        Vector2 desiredActivePosition = originalActivePosition + (currentViewportPoint - dragStartViewportPoint);
+        Vector2 desiredActivePosition = originalActivePosition + (currentMetricPoint - dragStartMetricPoint);
         desiredActivePosition = ApplySnapPolicy(desiredActivePosition, currentEvent.shift);
         Vector2 delta = desiredActivePosition - originalActivePosition;
 
@@ -389,7 +389,7 @@ public class PoseShapeAuthoringRigEditor : Editor
         }
     }
 
-    private void BeginVertexDrag(PoseShapeAuthoringRig rig, Vector2 startViewportPoint, string undoLabel)
+    private void BeginVertexDrag(PoseShapeAuthoringRig rig, Vector2 startMetricPoint, string undoLabel)
     {
         if (activeVertexIndex < 0)
         {
@@ -410,7 +410,7 @@ public class PoseShapeAuthoringRigEditor : Editor
             }
         }
 
-        dragStartViewportPoint = startViewportPoint;
+        dragStartMetricPoint = startMetricPoint;
         isDraggingVertices = true;
         Undo.RecordObject(rig, undoLabel);
     }
@@ -514,24 +514,16 @@ public class PoseShapeAuthoringRigEditor : Editor
         return a + (ab * t);
     }
 
-    private static Vector2 ApplySnapPolicy(Vector2 viewportPoint, bool freeMove)
+    private static Vector2 ApplySnapPolicy(Vector2 metricPoint, bool freeMove)
     {
         if (freeMove)
         {
-            return ClampViewportPoint(viewportPoint);
+            return metricPoint;
         }
 
-        Vector2 snapped = new Vector2(
-            Mathf.Round(viewportPoint.x / VertexSnapStep) * VertexSnapStep,
-            Mathf.Round(viewportPoint.y / VertexSnapStep) * VertexSnapStep);
-        return ClampViewportPoint(snapped);
-    }
-
-    private static Vector2 ClampViewportPoint(Vector2 viewportPoint)
-    {
         return new Vector2(
-            Mathf.Clamp01(viewportPoint.x),
-            Mathf.Clamp01(viewportPoint.y));
+            Mathf.Round(metricPoint.x / VertexSnapStep) * VertexSnapStep,
+            Mathf.Round(metricPoint.y / VertexSnapStep) * VertexSnapStep);
     }
 
     private static void LockSelectionToRig(PoseShapeAuthoringRig rig)
@@ -603,7 +595,7 @@ public class PoseShapeAuthoringRigEditor : Editor
             if (GUILayout.Button("Add Orb", EditorStyles.miniButtonLeft))
             {
                 Undo.RecordObject(rig, "Add Orb Target");
-                selectedOrbIndex = rig.AddOrbTarget(new Vector2(0.5f, 0.5f));
+                selectedOrbIndex = rig.AddOrbTarget(new Vector2(0f, 1.35f));
                 EditorUtility.SetDirty(rig);
                 SceneView.RepaintAll();
             }
@@ -704,10 +696,10 @@ public class PoseShapeAuthoringRigEditor : Editor
         return "Assets";
     }
 
-    private static bool TryGetViewportPointFromMouse(PoseShapeAuthoringRig rig, Vector2 mousePosition, out Vector2 viewportPoint)
+    private static bool TryGetMetricPointFromMouse(PoseShapeAuthoringRig rig, Vector2 mousePosition, out Vector2 metricPoint)
     {
         Ray ray = HandleUtility.GUIPointToWorldRay(mousePosition);
-        return rig.TryProjectSceneRay(ray, out viewportPoint);
+        return rig.TryProjectSceneRay(ray, out metricPoint);
     }
 
     private void ToggleVertexSelection(int index)
@@ -758,7 +750,7 @@ public class PoseShapeAuthoringRigEditor : Editor
         Rect selectionRect = GetScreenRect(marqueeStart, marqueeEnd);
         for (int index = 0; index < rig.PolygonVertices.Count; index++)
         {
-            if (!rig.TryViewportToWorld(rig.PolygonVertices[index], out Vector3 worldPoint))
+            if (!rig.TryMetricToWorld(rig.PolygonVertices[index], out Vector3 worldPoint))
             {
                 continue;
             }

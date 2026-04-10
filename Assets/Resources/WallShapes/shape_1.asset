@@ -13,28 +13,23 @@ MonoBehaviour:
   m_Name: shape_1
   m_EditorClassIdentifier: Assembly-CSharp::PolygonWallShapeAsset
   vertices:
-  - {x: 0.43815657, y: 0}
-  - {x: 0.5, y: 0}
-  - {x: 0.5, y: 0.1}
-  - {x: 0.52500004, y: 0.1}
-  - {x: 0.575, y: 0}
-  - {x: 0.625, y: 0}
-  - {x: 0.65000004, y: 0.05}
-  - {x: 0.575, y: 0.175}
-  - {x: 0.575, y: 0.275}
-  - {x: 0.65000004, y: 0.125}
-  - {x: 0.7, y: 0.25}
-  - {x: 0.575, y: 0.45000002}
-  - {x: 0.575, y: 0.77500004}
-  - {x: 0.425, y: 0.77500004}
-  - {x: 0.425, y: 0.52500004}
-  - {x: 0.32500002, y: 0.8}
-  - {x: 0.25, y: 0.7}
-  - {x: 0.425, y: 0.275}
+  - {x: -0.3, y: -0.1}
+  - {x: 0.25, y: -0.1}
+  - {x: 0.3, y: 0.25}
+  - {x: 0.35, y: 0.55}
+  - {x: 0.55, y: 0.4}
+  - {x: 0.85, y: 0.6}
+  - {x: 0.45000002, y: 1.3000001}
+  - {x: 0.35, y: 1.9000001}
+  - {x: -0.34999996, y: 2}
+  - {x: -0.4, y: 1.6}
+  - {x: -0.7, y: 1.85}
+  - {x: -0.95, y: 1.65}
+  - {x: -0.5, y: 0.95}
   shrinkDuration: 2.5
   orbTargets: []
   hasReferenceAvatarBounds: 0
-  referenceAvatarViewportBounds:
+  referenceAvatarBounds:
     serializedVersion: 2
     x: 0.3
     y: 0.1

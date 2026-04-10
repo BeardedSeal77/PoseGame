@@ -34,7 +34,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
     [Header("Authoring")]
     [SerializeField] private bool autoSolveInEditMode = true;
     [SerializeField, Min(1)] private int ikIterations = 8;
-    [SerializeField, Min(0.001f)] private float silhouettePadding = 0.035f;
+    [SerializeField, Min(0.001f)] private float silhouettePadding = 0.08f;
     [SerializeField, Min(0.05f)] private float shrinkDuration = 2.5f;
     [SerializeField, Min(0f)] private float jointHandleVisualOffset = 0.12f;
 
@@ -50,10 +50,10 @@ public class PoseShapeAuthoringRig : MonoBehaviour
 
     [SerializeField] private List<Vector2> polygonVertices = new List<Vector2>
     {
-        new Vector2(0.36f, 0.12f),
-        new Vector2(0.64f, 0.12f),
-        new Vector2(0.64f, 0.88f),
-        new Vector2(0.36f, 0.88f),
+        new Vector2(-0.64f, 0.37f),
+        new Vector2(0.64f, 0.37f),
+        new Vector2(0.64f, 2.33f),
+        new Vector2(-0.64f, 2.33f),
     };
 
     public Animator TargetAnimator => targetAnimator;
@@ -112,7 +112,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         IReadOnlyList<Vector2> sourceVertices = shapeAsset.Vertices;
         for (int index = 0; index < sourceVertices.Count; index++)
         {
-            polygonVertices.Add(ClampViewportPoint(sourceVertices[index]));
+            polygonVertices.Add(sourceVertices[index]);
         }
 
         orbTargets.Clear();
@@ -120,9 +120,26 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         for (int index = 0; index < sourceOrbTargets.Count; index++)
         {
             WallOrbTargetData orbTarget = sourceOrbTargets[index];
-            orbTarget.viewportPosition = ClampViewportPoint(orbTarget.viewportPosition);
-            orbTarget.radius = Mathf.Clamp(orbTarget.radius, 0.01f, 0.2f);
+            orbTarget.radius = Mathf.Clamp(orbTarget.radius, 0.02f, 0.5f);
             orbTargets.Add(orbTarget);
+        }
+
+        // Detect legacy viewport-space data (all values in 0-1) and convert to metric.
+        if (IsLikelyViewportData(polygonVertices))
+        {
+            for (int index = 0; index < polygonVertices.Count; index++)
+            {
+                polygonVertices[index] = ViewportToMetricStatic(polygonVertices[index]);
+            }
+
+            float metricScale = GetViewportToMetricScaleStatic();
+            for (int index = 0; index < orbTargets.Count; index++)
+            {
+                WallOrbTargetData orbTarget = orbTargets[index];
+                orbTarget.position = ViewportToMetricStatic(orbTarget.position);
+                orbTarget.radius *= metricScale;
+                orbTargets[index] = orbTarget;
+            }
         }
 
         shrinkDuration = shapeAsset.ShrinkDuration;
@@ -136,7 +153,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
             return;
         }
 
-        Rect? referenceBounds = TryGetAvatarViewportBounds(out Rect viewportBounds) ? viewportBounds : null;
+        Rect? referenceBounds = TryGetAvatarMetricBounds(out Rect metricBounds) ? metricBounds : null;
         shapeAsset.SetData(polygonVertices, shrinkDuration, orbTargets, referenceBounds);
     }
 
@@ -237,22 +254,22 @@ public class PoseShapeAuthoringRig : MonoBehaviour
 
     public void ResetShapeToRectangle()
     {
-        if (TryGetAvatarViewportBounds(out Rect viewportBounds))
+        if (TryGetAvatarMetricBounds(out Rect metricBounds))
         {
             polygonVertices.Clear();
-            polygonVertices.Add(new Vector2(viewportBounds.xMin, viewportBounds.yMin));
-            polygonVertices.Add(new Vector2(viewportBounds.xMax, viewportBounds.yMin));
-            polygonVertices.Add(new Vector2(viewportBounds.xMax, viewportBounds.yMax));
-            polygonVertices.Add(new Vector2(viewportBounds.xMin, viewportBounds.yMax));
+            polygonVertices.Add(new Vector2(metricBounds.xMin, metricBounds.yMin));
+            polygonVertices.Add(new Vector2(metricBounds.xMax, metricBounds.yMin));
+            polygonVertices.Add(new Vector2(metricBounds.xMax, metricBounds.yMax));
+            polygonVertices.Add(new Vector2(metricBounds.xMin, metricBounds.yMax));
             EnsureMinimumVertexCount();
             return;
         }
 
         polygonVertices.Clear();
-        polygonVertices.Add(new Vector2(0.36f, 0.12f));
-        polygonVertices.Add(new Vector2(0.64f, 0.12f));
-        polygonVertices.Add(new Vector2(0.64f, 0.88f));
-        polygonVertices.Add(new Vector2(0.36f, 0.88f));
+        polygonVertices.Add(new Vector2(-0.64f, 0.37f));
+        polygonVertices.Add(new Vector2(0.64f, 0.37f));
+        polygonVertices.Add(new Vector2(0.64f, 2.33f));
+        polygonVertices.Add(new Vector2(-0.64f, 2.33f));
         EnsureMinimumVertexCount();
     }
 
@@ -266,23 +283,23 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         polygonVertices.Clear();
         for (int index = 0; index < outline.Count; index++)
         {
-            polygonVertices.Add(ClampViewportPoint(outline[index]));
+            polygonVertices.Add(outline[index]);
         }
 
         EnsureMinimumVertexCount();
     }
 
-    public int AddVertex(Vector2 viewportPoint)
+    public int AddVertex(Vector2 metricPoint)
     {
-        polygonVertices.Add(ClampViewportPoint(viewportPoint));
+        polygonVertices.Add(metricPoint);
         EnsureMinimumVertexCount();
         return polygonVertices.Count - 1;
     }
 
-    public int InsertVertex(int index, Vector2 viewportPoint)
+    public int InsertVertex(int index, Vector2 metricPoint)
     {
         int safeIndex = Mathf.Clamp(index, 0, polygonVertices.Count);
-        polygonVertices.Insert(safeIndex, ClampViewportPoint(viewportPoint));
+        polygonVertices.Insert(safeIndex, metricPoint);
         EnsureMinimumVertexCount();
         return safeIndex;
     }
@@ -297,27 +314,46 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         polygonVertices.RemoveAt(index);
     }
 
-    public void SetVertex(int index, Vector2 viewportPoint)
+    public void SetVertex(int index, Vector2 metricPoint)
     {
         if (index < 0 || index >= polygonVertices.Count)
         {
             return;
         }
 
-        polygonVertices[index] = ClampViewportPoint(viewportPoint);
+        polygonVertices[index] = metricPoint;
     }
 
-    public bool TryViewportToWorld(Vector2 viewportPoint, out Vector3 worldPoint)
+    /// <summary>
+    /// Converts a metric wall-plane point (X, Y in meters) to a 3D world
+    /// position on the authoring plane at the character's depth.
+    /// </summary>
+    public bool TryMetricToWorld(Vector2 metricPoint, out Vector3 worldPoint)
     {
-        if (authoringCamera == null)
-        {
-            worldPoint = default;
-            return false;
-        }
-
-        float depth = GetAuthoringDepth();
-        worldPoint = authoringCamera.ViewportToWorldPoint(new Vector3(viewportPoint.x, viewportPoint.y, depth));
+        float depth = GetAuthoringPlanePoint().z;
+        worldPoint = new Vector3(metricPoint.x, metricPoint.y, depth);
         return true;
+    }
+
+    /// <summary>
+    /// Converts a 3D world position to a metric wall-plane point by
+    /// taking the X and Y components (meters).
+    /// </summary>
+    public bool TryWorldToMetric(Vector3 worldPoint, out Vector2 metricPoint)
+    {
+        metricPoint = new Vector2(worldPoint.x, worldPoint.y);
+        return true;
+    }
+
+    // Keep legacy name as a forwarding method for any external callers.
+    public bool TryViewportToWorld(Vector2 point, out Vector3 worldPoint)
+    {
+        return TryMetricToWorld(point, out worldPoint);
+    }
+
+    public bool TryWorldToViewport(Vector3 worldPoint, out Vector2 point)
+    {
+        return TryWorldToMetric(worldPoint, out point);
     }
 
     public bool TryGetOrbWorldPosition(int index, out Vector3 worldPosition)
@@ -328,33 +364,27 @@ public class PoseShapeAuthoringRig : MonoBehaviour
             return false;
         }
 
-        return TryViewportToWorld(orbTargets[index].viewportPosition, out worldPosition);
+        return TryMetricToWorld(orbTargets[index].position, out worldPosition);
     }
 
     public float GetOrbWorldRadius(int index)
     {
-        if (authoringCamera == null || index < 0 || index >= orbTargets.Count)
+        if (index < 0 || index >= orbTargets.Count)
         {
             return 0.05f;
         }
 
-        WallOrbTargetData orbTarget = orbTargets[index];
-        if (!TryViewportToWorld(orbTarget.viewportPosition, out Vector3 centerWorld) ||
-            !TryViewportToWorld(ClampViewportPoint(orbTarget.viewportPosition + new Vector2(orbTarget.radius, 0f)), out Vector3 edgeWorld))
-        {
-            return 0.05f;
-        }
-
-        return Mathf.Max(0.02f, Vector3.Distance(centerWorld, edgeWorld));
+        // Radius is already in meters — return directly.
+        return Mathf.Max(0.02f, orbTargets[index].radius);
     }
 
-    public int AddOrbTarget(Vector2 viewportPoint, float radius = 0.05f)
+    public int AddOrbTarget(Vector2 metricPoint, float radius = 0.08f)
     {
-        orbTargets.Add(new WallOrbTargetData(ClampViewportPoint(viewportPoint), Mathf.Clamp(radius, 0.01f, 0.2f)));
+        orbTargets.Add(new WallOrbTargetData(metricPoint, Mathf.Clamp(radius, 0.02f, 0.5f)));
         return orbTargets.Count - 1;
     }
 
-    public void SetOrbTargetPosition(int index, Vector2 viewportPoint)
+    public void SetOrbTargetPosition(int index, Vector2 metricPoint)
     {
         if (index < 0 || index >= orbTargets.Count)
         {
@@ -362,7 +392,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         }
 
         WallOrbTargetData orbTarget = orbTargets[index];
-        orbTarget.viewportPosition = ClampViewportPoint(viewportPoint);
+        orbTarget.position = metricPoint;
         orbTargets[index] = orbTarget;
     }
 
@@ -374,7 +404,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         }
 
         WallOrbTargetData orbTarget = orbTargets[index];
-        orbTarget.radius = Mathf.Clamp(radius, 0.01f, 0.2f);
+        orbTarget.radius = Mathf.Clamp(radius, 0.02f, 0.5f);
         orbTargets[index] = orbTarget;
     }
 
@@ -393,36 +423,21 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         orbTargets.RemoveAt(index);
     }
 
-    public bool TryWorldToViewport(Vector3 worldPoint, out Vector2 viewportPoint)
+    public bool TryProjectSceneRay(Ray ray, out Vector2 metricPoint)
     {
-        if (authoringCamera == null)
-        {
-            viewportPoint = default;
-            return false;
-        }
-
-        Vector3 projected = authoringCamera.WorldToViewportPoint(worldPoint);
-        viewportPoint = ClampViewportPoint(new Vector2(projected.x, projected.y));
-        return projected.z > 0f;
-    }
-
-    public bool TryProjectSceneRay(Ray ray, out Vector2 viewportPoint)
-    {
-        viewportPoint = default;
-
-        if (authoringCamera == null)
-        {
-            return false;
-        }
+        metricPoint = default;
 
         Vector3 planePoint = GetAuthoringPlanePoint();
-        Plane plane = new Plane(authoringCamera.transform.forward, planePoint);
+        Vector3 planeNormal = authoringCamera != null ? authoringCamera.transform.forward : Vector3.back;
+        Plane plane = new Plane(planeNormal, planePoint);
         if (!plane.Raycast(ray, out float distance))
         {
             return false;
         }
 
-        return TryWorldToViewport(ray.GetPoint(distance), out viewportPoint);
+        Vector3 hitPoint = ray.GetPoint(distance);
+        metricPoint = new Vector2(hitPoint.x, hitPoint.y);
+        return true;
     }
 
     public void SetShrinkDuration(float duration)
@@ -560,8 +575,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         for (int index = 0; index < orbTargets.Count; index++)
         {
             WallOrbTargetData orbTarget = orbTargets[index];
-            orbTarget.viewportPosition = ClampViewportPoint(orbTarget.viewportPosition);
-            orbTarget.radius = Mathf.Clamp(orbTarget.radius, 0.01f, 0.2f);
+            orbTarget.radius = Mathf.Clamp(orbTarget.radius, 0.02f, 0.5f);
             orbTargets[index] = orbTarget;
         }
     }
@@ -575,12 +589,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
 
         while (polygonVertices.Count < 3)
         {
-            polygonVertices.Add(new Vector2(0.35f + (polygonVertices.Count * 0.15f), 0.2f + (polygonVertices.Count * 0.25f)));
-        }
-
-        for (int index = 0; index < polygonVertices.Count; index++)
-        {
-            polygonVertices[index] = ClampViewportPoint(polygonVertices[index]);
+            polygonVertices.Add(new Vector2(-0.5f + (polygonVertices.Count * 0.5f), 0.5f + (polygonVertices.Count * 0.5f)));
         }
     }
 
@@ -843,39 +852,43 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         return targetAnimator.GetBoneTransform(HumanBodyBones.Spine);
     }
 
+    /// <summary>
+    /// Builds a silhouette polygon around the avatar using bone world
+    /// positions projected onto the wall plane (metric XY).
+    /// </summary>
     private bool TryBuildAvatarOutline(out List<Vector2> outline)
     {
         outline = null;
 
-        if (authoringCamera == null || targetAnimator == null || !targetAnimator.isHuman)
+        if (targetAnimator == null || !targetAnimator.isHuman)
         {
             return false;
         }
 
-        if (!TryGetViewportPoint(HumanBodyBones.Head, out Vector2 head) ||
-            !TryGetViewportPoint(HumanBodyBones.Hips, out Vector2 hips) ||
-            !TryGetViewportPoint(HumanBodyBones.LeftHand, out Vector2 leftHand) ||
-            !TryGetViewportPoint(HumanBodyBones.RightHand, out Vector2 rightHand) ||
-            !TryGetViewportPoint(HumanBodyBones.LeftFoot, out Vector2 leftFoot) ||
-            !TryGetViewportPoint(HumanBodyBones.RightFoot, out Vector2 rightFoot))
+        if (!TryGetMetricPoint(HumanBodyBones.Head, out Vector2 head) ||
+            !TryGetMetricPoint(HumanBodyBones.Hips, out Vector2 hips) ||
+            !TryGetMetricPoint(HumanBodyBones.LeftHand, out Vector2 leftHand) ||
+            !TryGetMetricPoint(HumanBodyBones.RightHand, out Vector2 rightHand) ||
+            !TryGetMetricPoint(HumanBodyBones.LeftFoot, out Vector2 leftFoot) ||
+            !TryGetMetricPoint(HumanBodyBones.RightFoot, out Vector2 rightFoot))
         {
             return false;
         }
 
-        Vector2 leftShoulder = GetViewportPointOrFallback(HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm);
-        Vector2 rightShoulder = GetViewportPointOrFallback(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm);
-        Vector2 leftElbow = GetViewportPointOrFallback(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand);
-        Vector2 rightElbow = GetViewportPointOrFallback(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand);
-        Vector2 leftHip = GetViewportPointOrFallback(HumanBodyBones.LeftUpperLeg, HumanBodyBones.Hips);
-        Vector2 rightHip = GetViewportPointOrFallback(HumanBodyBones.RightUpperLeg, HumanBodyBones.Hips);
+        Vector2 leftShoulder = GetMetricPointOrFallback(HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm);
+        Vector2 rightShoulder = GetMetricPointOrFallback(HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm);
+        Vector2 leftElbow = GetMetricPointOrFallback(HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand);
+        Vector2 rightElbow = GetMetricPointOrFallback(HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand);
+        Vector2 leftHip = GetMetricPointOrFallback(HumanBodyBones.LeftUpperLeg, HumanBodyBones.Hips);
+        Vector2 rightHip = GetMetricPointOrFallback(HumanBodyBones.RightUpperLeg, HumanBodyBones.Hips);
 
-        OrderByScreenX(ref leftShoulder, ref rightShoulder);
-        OrderByScreenX(ref leftElbow, ref rightElbow);
-        OrderByScreenX(ref leftHand, ref rightHand);
-        OrderByScreenX(ref leftHip, ref rightHip);
-        OrderByScreenX(ref leftFoot, ref rightFoot);
+        OrderByX(ref leftShoulder, ref rightShoulder);
+        OrderByX(ref leftElbow, ref rightElbow);
+        OrderByX(ref leftHand, ref rightHand);
+        OrderByX(ref leftHip, ref rightHip);
+        OrderByX(ref leftFoot, ref rightFoot);
 
-        float shoulderWidth = Mathf.Max(0.08f, Mathf.Abs(rightShoulder.x - leftShoulder.x));
+        float shoulderWidth = Mathf.Max(0.15f, Mathf.Abs(rightShoulder.x - leftShoulder.x));
         float sidePadding = Mathf.Max(silhouettePadding, shoulderWidth * 0.18f);
         float shoulderLift = Mathf.Max(silhouettePadding, shoulderWidth * 0.22f);
         float headLift = Mathf.Max(silhouettePadding * 1.5f, shoulderWidth * 0.28f);
@@ -896,47 +909,47 @@ public class PoseShapeAuthoringRig : MonoBehaviour
 
         outline = new List<Vector2>
         {
-            ClampViewportPoint(leftFoot + new Vector2(-footOut, -footDrop)),
-            ClampViewportPoint(new Vector2(leftHipX, hipY)),
-            ClampViewportPoint(leftElbow + new Vector2(-elbowOut, -handDrop * 0.35f)),
-            ClampViewportPoint(leftHand + new Vector2(-handOut * 0.82f, -handDrop)),
-            ClampViewportPoint(leftHand + new Vector2(-handOut, 0f)),
-            ClampViewportPoint(leftElbow + new Vector2(-elbowOut, handDrop * 0.35f)),
-            ClampViewportPoint(new Vector2(leftShoulderX, shoulderY)),
-            ClampViewportPoint(new Vector2(head.x - headHalfWidth, headY)),
-            ClampViewportPoint(new Vector2(head.x + headHalfWidth, headY)),
-            ClampViewportPoint(new Vector2(rightShoulderX, shoulderY)),
-            ClampViewportPoint(rightElbow + new Vector2(elbowOut, handDrop * 0.35f)),
-            ClampViewportPoint(rightHand + new Vector2(handOut, 0f)),
-            ClampViewportPoint(rightHand + new Vector2(handOut * 0.82f, -handDrop)),
-            ClampViewportPoint(rightElbow + new Vector2(elbowOut, -handDrop * 0.35f)),
-            ClampViewportPoint(new Vector2(rightHipX, hipY)),
-            ClampViewportPoint(rightFoot + new Vector2(footOut, -footDrop)),
+            leftFoot + new Vector2(-footOut, -footDrop),
+            new Vector2(leftHipX, hipY),
+            leftElbow + new Vector2(-elbowOut, -handDrop * 0.35f),
+            leftHand + new Vector2(-handOut * 0.82f, -handDrop),
+            leftHand + new Vector2(-handOut, 0f),
+            leftElbow + new Vector2(-elbowOut, handDrop * 0.35f),
+            new Vector2(leftShoulderX, shoulderY),
+            new Vector2(head.x - headHalfWidth, headY),
+            new Vector2(head.x + headHalfWidth, headY),
+            new Vector2(rightShoulderX, shoulderY),
+            rightElbow + new Vector2(elbowOut, handDrop * 0.35f),
+            rightHand + new Vector2(handOut, 0f),
+            rightHand + new Vector2(handOut * 0.82f, -handDrop),
+            rightElbow + new Vector2(elbowOut, -handDrop * 0.35f),
+            new Vector2(rightHipX, hipY),
+            rightFoot + new Vector2(footOut, -footDrop),
         };
 
         return true;
     }
 
-    private bool TryGetAvatarViewportBounds(out Rect viewportBounds)
+    private bool TryGetAvatarMetricBounds(out Rect metricBounds)
     {
-        viewportBounds = default;
+        metricBounds = default;
 
-        if (authoringCamera == null || targetAnimator == null || !targetAnimator.isHuman)
+        if (targetAnimator == null || !targetAnimator.isHuman)
         {
             return false;
         }
 
         List<Vector2> points = new List<Vector2>(10);
-        AddViewportPoint(points, HumanBodyBones.Head);
-        AddViewportPoint(points, HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm);
-        AddViewportPoint(points, HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm);
-        AddViewportPoint(points, HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand);
-        AddViewportPoint(points, HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand);
-        AddViewportPoint(points, HumanBodyBones.LeftHand);
-        AddViewportPoint(points, HumanBodyBones.RightHand);
-        AddViewportPoint(points, HumanBodyBones.Hips);
-        AddViewportPoint(points, HumanBodyBones.LeftFoot);
-        AddViewportPoint(points, HumanBodyBones.RightFoot);
+        AddMetricPoint(points, HumanBodyBones.Head);
+        AddMetricPoint(points, HumanBodyBones.LeftShoulder, HumanBodyBones.LeftUpperArm);
+        AddMetricPoint(points, HumanBodyBones.RightShoulder, HumanBodyBones.RightUpperArm);
+        AddMetricPoint(points, HumanBodyBones.LeftLowerArm, HumanBodyBones.LeftHand);
+        AddMetricPoint(points, HumanBodyBones.RightLowerArm, HumanBodyBones.RightHand);
+        AddMetricPoint(points, HumanBodyBones.LeftHand);
+        AddMetricPoint(points, HumanBodyBones.RightHand);
+        AddMetricPoint(points, HumanBodyBones.Hips);
+        AddMetricPoint(points, HumanBodyBones.LeftFoot);
+        AddMetricPoint(points, HumanBodyBones.RightFoot);
 
         if (points.Count < 2)
         {
@@ -957,57 +970,48 @@ public class PoseShapeAuthoringRig : MonoBehaviour
 
         min -= padding;
         max += padding;
-        min = ClampViewportPoint(min);
-        max = ClampViewportPoint(max);
 
-        viewportBounds = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
-        return viewportBounds.width > 0.01f && viewportBounds.height > 0.01f;
+        metricBounds = Rect.MinMaxRect(min.x, min.y, max.x, max.y);
+        return metricBounds.width > 0.01f && metricBounds.height > 0.01f;
     }
 
-    private bool TryGetViewportPoint(HumanBodyBones boneId, out Vector2 viewportPoint)
+    private bool TryGetMetricPoint(HumanBodyBones boneId, out Vector2 metricPoint)
     {
         Transform bone = targetAnimator.GetBoneTransform(boneId);
         if (bone == null)
         {
-            viewportPoint = default;
+            metricPoint = default;
             return false;
         }
 
-        Vector3 viewport = authoringCamera.WorldToViewportPoint(bone.position);
-        if (viewport.z <= 0f)
-        {
-            viewportPoint = default;
-            return false;
-        }
-
-        viewportPoint = ClampViewportPoint(new Vector2(viewport.x, viewport.y));
+        metricPoint = new Vector2(bone.position.x, bone.position.y);
         return true;
     }
 
-    private void AddViewportPoint(List<Vector2> points, HumanBodyBones boneId)
+    private void AddMetricPoint(List<Vector2> points, HumanBodyBones boneId)
     {
-        if (TryGetViewportPoint(boneId, out Vector2 point))
+        if (TryGetMetricPoint(boneId, out Vector2 point))
         {
             points.Add(point);
         }
     }
 
-    private void AddViewportPoint(List<Vector2> points, HumanBodyBones primaryBoneId, HumanBodyBones fallbackBoneId)
+    private void AddMetricPoint(List<Vector2> points, HumanBodyBones primaryBoneId, HumanBodyBones fallbackBoneId)
     {
-        if (TryGetViewportPoint(primaryBoneId, out Vector2 point) || TryGetViewportPoint(fallbackBoneId, out point))
+        if (TryGetMetricPoint(primaryBoneId, out Vector2 point) || TryGetMetricPoint(fallbackBoneId, out point))
         {
             points.Add(point);
         }
     }
 
-    private Vector2 GetViewportPointOrFallback(HumanBodyBones primaryBoneId, HumanBodyBones fallbackBoneId)
+    private Vector2 GetMetricPointOrFallback(HumanBodyBones primaryBoneId, HumanBodyBones fallbackBoneId)
     {
-        if (TryGetViewportPoint(primaryBoneId, out Vector2 point))
+        if (TryGetMetricPoint(primaryBoneId, out Vector2 point))
         {
             return point;
         }
 
-        return TryGetViewportPoint(fallbackBoneId, out point) ? point : new Vector2(0.5f, 0.5f);
+        return TryGetMetricPoint(fallbackBoneId, out point) ? point : new Vector2(0f, 1f);
     }
 
     private float GetAuthoringDepth()
@@ -1080,7 +1084,7 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         target.position = constrainedPosition;
     }
 
-    private static void OrderByScreenX(ref Vector2 a, ref Vector2 b)
+    private static void OrderByX(ref Vector2 a, ref Vector2 b)
     {
         if (a.x <= b.x)
         {
@@ -1088,13 +1092,6 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         }
 
         (a, b) = (b, a);
-    }
-
-    private static Vector2 ClampViewportPoint(Vector2 point)
-    {
-        return new Vector2(
-            Mathf.Clamp01(point.x),
-            Mathf.Clamp01(point.y));
     }
 
     private static string GetRelativePath(Transform root, Transform current)
@@ -1144,5 +1141,42 @@ public class PoseShapeAuthoringRig : MonoBehaviour
         }
 
         return angleDegrees;
+    }
+
+    // ----------------------------------------------------------------
+    //  Legacy viewport → metric conversion (known pose-creator camera)
+    // ----------------------------------------------------------------
+
+    private const float RefCameraDistance = 4.5f;
+    private const float RefCameraFOV = 32f;
+    private const float RefCameraHeight = 1.35f;
+    private const float RefCameraAspect = 16f / 9f;
+
+    private static Vector2 ViewportToMetricStatic(Vector2 viewport)
+    {
+        float halfHeight = RefCameraDistance * Mathf.Tan(RefCameraFOV * 0.5f * Mathf.Deg2Rad);
+        float halfWidth = halfHeight * RefCameraAspect;
+        return new Vector2(
+            (viewport.x - 0.5f) * halfWidth * 2f,
+            (viewport.y - 0.5f) * halfHeight * 2f + RefCameraHeight);
+    }
+
+    private static float GetViewportToMetricScaleStatic()
+    {
+        return RefCameraDistance * Mathf.Tan(RefCameraFOV * 0.5f * Mathf.Deg2Rad) * 2f;
+    }
+
+    private static bool IsLikelyViewportData(IReadOnlyList<Vector2> vertices)
+    {
+        for (int index = 0; index < vertices.Count; index++)
+        {
+            if (vertices[index].x < -0.01f || vertices[index].x > 1.01f ||
+                vertices[index].y < -0.01f || vertices[index].y > 1.01f)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

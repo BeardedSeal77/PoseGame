@@ -1,15 +1,17 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [Serializable]
 public struct WallOrbTargetData
 {
-    public Vector2 viewportPosition;
+    [FormerlySerializedAs("viewportPosition")]
+    public Vector2 position;
     public float radius;
 
-    public WallOrbTargetData(Vector2 viewportPosition, float radius)
+    public WallOrbTargetData(Vector2 position, float radius)
     {
-        this.viewportPosition = viewportPosition;
+        this.position = position;
         this.radius = radius;
     }
 }

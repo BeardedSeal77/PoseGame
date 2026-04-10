@@ -13,14 +13,14 @@ MonoBehaviour:
   m_Name: shape_3
   m_EditorClassIdentifier: Assembly-CSharp::PolygonWallShapeAsset
   vertices:
-  - {x: 0.4, y: 0}
-  - {x: 0.6, y: 0}
-  - {x: 0.6, y: 0.5}
-  - {x: 0.4, y: 0.5}
+  - {x: -0.4, y: -0.15}
+  - {x: 0.35, y: -0.15}
+  - {x: 0.45000002, y: 2.05}
+  - {x: -0.49999997, y: 2}
   shrinkDuration: 2.5
   orbTargets: []
   hasReferenceAvatarBounds: 0
-  referenceAvatarViewportBounds:
+  referenceAvatarBounds:
     serializedVersion: 2
     x: 0.3
     y: 0.1
