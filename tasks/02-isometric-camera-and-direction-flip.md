@@ -1,65 +1,62 @@
-# Task 2: Isometric Camera View and Direction Flip
+# Task 2: Isometric Camera View and Wall Direction Flip
 
 ## Problem
 
-Currently the camera faces the character head-on (front view), and walls travel **toward** the camera/viewport. The desired setup is:
+Currently the camera faces the character head-on (front view), and walls travel **toward** the camera/viewport (from behind the camera toward the player). The desired setup is:
 
 - **Isometric-style camera** angled 30-40 degrees above the scene, looking down at the character.
-- **Character faces away** from the screen (back of character visible to the player).
-- **Walls approach from the distance** (far side of the scene), moving toward the character - not from behind the camera.
+- **Character still faces the camera** (mirror mode - player sees the front of the character, movements are mirrored).
+- **Walls approach from the distance** (far side of the scene, visible to the player), moving toward the character - not from behind the camera.
 
 ## Current Architecture
 
 - **Camera**: `Camera.main` with `FixedAspectCamera` enforcing 16:9 aspect. Position/rotation set in scene file ([GameScene.unity](Assets/Scenes/GameScene.unity)).
 - **Wall travel**: [ScreenWallFitController.cs](Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs) uses `wallStartDepth` (default 0.75 in Z) and lerps `travelOffset` from that depth toward 0. The wall's `root.transform.localPosition` is set to `(0, 0, travelOffset)`.
-- **Character facing**: [HumanoidPoseDriver.cs](Assets/Scripts/Runtime/Avatar/HumanoidPoseDriver.cs) applies root rotation from shoulder/hip cross-product. The character model is oriented to face the camera in the current setup.
-- **Pose evaluation**: `EvaluateCurrentPose()` converts bone world positions to viewport space via `camera.WorldToViewportPoint()` and checks them against the wall polygon. This means the evaluation is inherently camera-relative.
+- **Character facing**: [HumanoidPoseDriver.cs](Assets/Scripts/Runtime/Avatar/HumanoidPoseDriver.cs) applies root rotation from shoulder/hip cross-product. The character model faces the camera (mirror mode) in the current setup.
+- **Pose evaluation**: `EvaluateCurrentPose()` converts bone world positions to viewport space via `camera.WorldToViewportPoint()` and checks them against the wall polygon.
 
 ## Proposed Fix
 
 ### 1. Camera Repositioning
 
-- Move the camera to an elevated position behind and above the character.
-- Set rotation to look down at ~30-40 degrees.
+- Move the camera to an elevated position in front of and above the character, looking down at ~30-40 degrees.
+- Since the character still faces the camera, the camera should be on the same side as before but elevated.
 - Example transform:
-  - Position: `(0, Y, -Z)` where Y gives the elevation and Z places it behind the character.
+  - Position: `(0, Y, -Z)` where Y gives the elevation and -Z places it in front of the character.
   - Rotation: `(30-40, 0, 0)` pitch downward.
 - Keep `FixedAspectCamera` 16:9 enforcement active.
 
 ### 2. Character Orientation
 
-- Rotate the character's base transform 180 degrees on Y so the character's back faces the camera.
-- In `HumanoidPoseDriver`, adjust `rootPositionScale` Z sign and root yaw calculation to account for the flipped orientation.
-- Mirror the Kinect X-axis mapping if needed so left/right are still intuitive for the player.
+- **No change to character facing** - character continues to face the camera (mirror mode).
+- Kinect left/right mirroring stays as-is.
+- Root yaw and rotation logic in `HumanoidPoseDriver` remains unchanged.
 
 ### 3. Wall Travel Direction
 
-- Walls should spawn far away (large positive Z in front of the character) and travel toward the character.
-- Reverse the travel offset direction: start at a far Z value and lerp toward the character's Z position.
-- The wall should be visible approaching from a distance in the isometric view.
+- Currently walls spawn near the camera and travel toward the character. Reverse this:
+- Walls should spawn far behind the character (large positive Z, away from camera) and travel toward the character/camera.
+- The player sees walls approaching from the distance, getting closer and eventually reaching the character.
+- Reverse the travel offset: start at a far Z value and lerp toward the character's Z position.
 
 ### 4. Pose Evaluation Adjustment
 
-- Since `EvaluateCurrentPose()` projects into viewport space, the camera change automatically updates the projection.
-- However, the wall polygon shapes were authored for a front-on view. With an angled camera, the same 2D polygon may not represent the correct silhouette.
-- **Option A**: Keep wall shapes in viewport space and re-author them for the new camera angle.
-- **Option B**: Define wall shapes in a character-local plane (perpendicular to the wall's approach direction) and project both the wall and the character onto that plane for comparison. This decouples evaluation from camera angle.
-- Option B is more robust long-term but requires more refactoring.
+- With an angled camera, viewport-space projection changes. Wall polygons authored for a front-on view will be distorted in an isometric projection.
+- **Recommended approach**: Decouple pose evaluation from the camera. Evaluate on the wall's own facing plane (perpendicular to the wall's travel direction) rather than viewport space. Project both character bone samples and wall polygon onto this plane.
+- This makes wall shapes camera-independent - existing shapes continue to work regardless of camera angle.
 
 ### Key Files to Modify
 
 | File | Change |
 |------|--------|
 | [GameScene.unity](Assets/Scenes/GameScene.unity) | Camera position and rotation |
-| [FixedAspectCamera.cs](Assets/Scripts/Runtime/Camera/FixedAspectCamera.cs) | May need to remain unchanged if only transform changes |
-| [HumanoidPoseDriver.cs](Assets/Scripts/Runtime/Avatar/HumanoidPoseDriver.cs) | Adjust root rotation, axis mirroring for new orientation |
-| [ScreenWallFitController.cs](Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs) | Reverse wall travel direction, adjust spawn position |
-| Wall shape assets in [Resources/WallShapes/](Assets/Resources/WallShapes/) | May need re-authoring for new perspective |
+| [ScreenWallFitController.cs](Assets/Scripts/Runtime/WallFit/ScreenWallFitController.cs) | Reverse wall travel direction; decouple evaluation from camera projection |
+| [FixedAspectCamera.cs](Assets/Scripts/Runtime/Camera/FixedAspectCamera.cs) | Likely unchanged, only transform changes needed |
 
 ### Acceptance Criteria
 
 - Camera shows an isometric view from 30-40 degrees above.
-- The player sees the character's back.
+- The character still faces the camera (mirror mode preserved).
 - Walls visibly approach from the far end of the scene toward the character.
-- Pose evaluation still works correctly with the new camera angle.
-- The game feels natural - player movements map intuitively to the on-screen character.
+- Pose evaluation works correctly with the new camera angle (decoupled from viewport projection).
+- The game feels natural - player movements still map intuitively as a mirror.
